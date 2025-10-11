@@ -3,7 +3,7 @@
       multiple
       directory-dnd
       action="https://www.mocky.io/v2/5e4bafc63100007100d8b70f"
-      :max="5"
+      :max="1"
   >
     <n-upload-dragger>
       <div style="margin-bottom: 12px">
@@ -23,5 +23,5 @@
 
 <script setup>
 import { Archive } from "@vicons/ionicons5";
-import { NIcon, NUpload, NUploadDragger, NText, NP } from "naive-ui";
+import {NIcon, NUpload, NUploadDragger, NText, NP} from "naive-ui";
 </script>

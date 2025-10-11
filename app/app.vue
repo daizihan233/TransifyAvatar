@@ -1,5 +1,5 @@
 <template>
-  <n-config-provider :theme="theme" :date-locale="dateZhCN" :locale="zhCN" class="full">
+  <n-config-provider :theme="themeRef" :date-locale="dateZhCN" :locale="zhCN" class="full">
     <n-global-style />
     <n-message-provider class="full">
       <n-dialog-provider class="full">
@@ -29,13 +29,23 @@
 
 
 <script setup>
-import { computed, ref } from "vue";
+import { ref, onMounted, watch } from "vue";
 import {
   zhCN, dateZhCN , NConfigProvider, darkTheme, NDialogProvider, NMessageProvider, useOsTheme, NGlobalStyle
 } from "naive-ui";
 
-const osThemeRef = useOsTheme();
-let theme = computed(() => osThemeRef.value === "dark" ? darkTheme : null);
+// Ensure SSR and initial client render use the same theme (null/light), then switch on mounted based on OS.
+const themeRef = ref(null);
+if (process.client) {
+  const osThemeRef = useOsTheme();
+  const applyTheme = (val) => {
+    themeRef.value = val === "dark" ? darkTheme : null;
+  };
+  onMounted(() => {
+    applyTheme(osThemeRef.value);
+  });
+  watch(osThemeRef, (val) => applyTheme(val));
+}
 
 const currentRef = ref(1);
 const currentStatus = ref("process");
