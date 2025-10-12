@@ -10,10 +10,10 @@
                   title="上传图片"
               />
               <n-step
-                  title="图片裁剪"
+                  title="模型处理"
               />
               <n-step
-                  title="模型处理"
+                  title="图片裁剪"
               />
               <n-step
                   title="完成！！"
@@ -55,8 +55,9 @@ const current = currentRef;
 const route = useRoute();
 const stepMap = {
   "/": 1,
-  "/cut": 2,
-  "/process": 3,
+  "/process": 2,
+  "/chroma": 2,
+  "/cut": 3,
   "/done": 4
 };
 watch(

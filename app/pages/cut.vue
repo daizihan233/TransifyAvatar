@@ -1,9 +1,9 @@
 <template>
   <div class="cut-container">
     <div v-if="!imageSrc" class="no-image">
-      <n-result status="404" title="未找到图片" description="请先上传图片">
+      <n-result status="404" title="未找到图片" description="请先去背景处理">
         <template #footer>
-          <n-button @click="router.push('/')">返回上传页面</n-button>
+          <n-button @click="router.push('/process')">前往去背景</n-button>
         </template>
       </n-result>
     </div>
@@ -43,8 +43,9 @@
 
           <div class="action-buttons">
             <n-button type="primary" @click="cropImage" :disabled="!imageLoaded">裁剪图片</n-button>
-            <n-button type="info" @click="goToProcess" :disabled="!croppedImageData">去背景处理</n-button>
             <n-button type="success" @click="downloadImage" :disabled="!croppedImageData">下载裁剪PNG</n-button>
+            <n-button type="primary" @click="router.push('/done')" :disabled="!croppedImageData">完成（添加横条背景）</n-button>
+            <n-button tertiary @click="router.push('/process')">返回去背景</n-button>
             <n-button @click="reset">重置</n-button>
             <n-button @click="router.push('/')">返回上传</n-button>
           </div>
@@ -60,7 +61,7 @@ import { useRouter } from 'vue-router'
 import { useUploadedImage } from '~~/composables/useUploadedImage.js';
 
 const router = useRouter()
-const { uploadedImage, croppedImage } = useUploadedImage()
+const { mattedImage, croppedImage } = useUploadedImage()
 
 // Refs
 const imageEl = ref(null)
@@ -71,7 +72,7 @@ const previewContainer = ref(null)
 const cropContainerStyle = ref({})
 
 // 响应式数据
-const imageSrc = ref(uploadedImage.value || '')
+const imageSrc = ref(mattedImage.value || '')
 const imageLoaded = ref(false)
 const croppedImageData = ref(null)
 const cropSize = ref(200)
@@ -106,8 +107,8 @@ const getDpr = () => {
   return dpr > 0 ? dpr : 1
 }
 
-// 监听图片数据变化
-watch(uploadedImage, (newVal) => {
+// 监听抠图结果变化
+watch(mattedImage, (newVal) => {
   if (newVal) {
     imageSrc.value = newVal
     nextTick(() => loadImage())
@@ -335,7 +336,6 @@ const cropImage = () => {
   croppedImage.value = croppedImageData.value
 }
 
-function goToProcess() { router.push('/process') }
 
 function downloadImage() { if (croppedImageData.value) { const link = document.createElement('a'); link.download = 'cropped-image.png'; link.href = croppedImageData.value; link.click() } }
 

@@ -29,15 +29,17 @@ import { useRouter } from "vue-router";
 import { useUploadedImage } from "~~/composables/useUploadedImage.js";
 
 const router = useRouter();
-const { uploadedImage, croppedImage } = useUploadedImage();
+const { uploadedImage, croppedImage, mattedImage } = useUploadedImage();
 
 function handleBeforeUpload({ file }) {
   if (!file) return false;
   const reader = new FileReader();
   reader.onload = () => {
     uploadedImage.value = String(reader.result || "");
+    // reset downstream state
     croppedImage.value = null;
-    router.push("/cut");
+    mattedImage.value = null;
+    router.push("/process");
   };
   reader.readAsDataURL(file.file || file);
   // prevent default upload

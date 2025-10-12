@@ -34,7 +34,7 @@ async function ensureLoaded() {
   throw lastErr || new Error('Failed to initialize matting pipeline')
 }
 
-export type MattingBackend = 'transformers' | 'imgly'
+export type MattingBackend = 'transformers' | 'imgly' | 'chroma'
 
 export function useMatting() {
   const loading = ref(false)
@@ -45,7 +45,7 @@ export function useMatting() {
   async function removeBg(
     dataUrl: string,
     onProgress?: (stage: string, percent?: number) => void,
-    options?: { backend?: MattingBackend }
+    options?: { backend?: MattingBackend, chroma?: { color: string, tolerance?: number, softness?: number, minRemoveArea?: number, minKeepArea?: number, edgeRadius?: number, edgeExtraTolerance?: number } }
   ): Promise<string> {
     const backend: MattingBackend = options?.backend ?? 'transformers'
 
@@ -53,6 +53,243 @@ export function useMatting() {
     loading.value = true
     error.value = null
     try {
+      if (backend === 'chroma') {
+        // 纯色抠图（按用户选择的颜色去除背景）
+        onProgress?.('reading image', 20)
+
+        // 解析颜色为 RGB
+        const hex = options?.chroma?.color || '#00ff00'
+        const tol = Math.max(0, Math.min(255, Math.round(options?.chroma?.tolerance ?? 40)))
+        const soft = Math.max(0, Math.min(255, Math.round(options?.chroma?.softness ?? 20)))
+        const minRemoveArea = Math.max(0, Math.round(options?.chroma?.minRemoveArea ?? 64))
+        const minKeepArea = Math.max(0, Math.round(options?.chroma?.minKeepArea ?? 36))
+        const edgeRadius = Math.max(0, Math.round(options?.chroma?.edgeRadius ?? 2))
+        const edgeExtraTol = Math.max(0, Math.min(255, Math.round(options?.chroma?.edgeExtraTolerance ?? 15)))
+
+        const parseHex = (c: string): [number, number, number] => {
+          const s = c.trim().toLowerCase()
+          const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(s)
+          if (!m) return [0, 255, 0]
+          const v = m[1]!
+          if (v.length === 3) {
+            const r = Number.parseInt(v.charAt(0) + v.charAt(0), 16)
+            const g = Number.parseInt(v.charAt(1) + v.charAt(1), 16)
+            const b = Number.parseInt(v.charAt(2) + v.charAt(2), 16)
+            return [r, g, b]
+          }
+          const r = Number.parseInt(v.slice(0, 2), 16)
+          const g = Number.parseInt(v.slice(2, 4), 16)
+          const b = Number.parseInt(v.slice(4, 6), 16)
+          return [r, g, b]
+        }
+
+        const [tr, tg, tb] = parseHex(hex)
+
+        // 加载图片到画布
+        const img = new Image()
+        const loaded: Promise<HTMLImageElement> = new Promise((resolve, reject) => {
+          img.onload = () => resolve(img)
+          img.onerror = () => reject(new Error('无法读取图片'))
+        })
+        img.src = dataUrl
+        await loaded
+
+        onProgress?.('preprocess', 40)
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.max(1, img.naturalWidth || img.width)
+        canvas.height = Math.max(1, img.naturalHeight || img.height)
+        const ctx = canvas.getContext('2d')!
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+
+        const id = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        const data = id.data
+        const w = canvas.width
+        const h = canvas.height
+        const n = w * h
+
+        // 计算阈值：使用 RGB 空间欧氏距离（0..~441）。
+        // 这里以单通道最大差值为 255 标准化，容差参数按 0..255 解读。
+        const tolLo = tol
+        const tolHi = tol + soft
+        const tolHiClamped = Math.max(tolLo, tolHi)
+
+        onProgress?.('infer', 60)
+        // 先计算初始 alpha 与距离，保留原始 alpha
+        const origA = new Uint8ClampedArray(n)
+        const alpha = new Uint8ClampedArray(n)
+        const distArr = new Float32Array(n)
+        for (let p = 0, i = 0; p < n; p++, i += 4) {
+          const r = data[i] ?? 0
+          const g = data[i + 1] ?? 0
+          const b = data[i + 2] ?? 0
+          const a = data[i + 3] ?? 255
+          origA[p] = a
+          const dr = r - tr
+          const dg = g - tg
+          const db = b - tb
+          const dist = Math.hypot(dr, dg, db)
+          distArr[p] = dist
+          if (dist <= tolLo) {
+            alpha[p] = 0
+          } else if (soft > 0 && dist < tolHiClamped) {
+            const t = (dist - tolLo) / (tolHiClamped - tolLo)
+            alpha[p] = Math.round(a * t)
+          } else {
+            alpha[p] = a
+          }
+        }
+
+        // 基于连通域进行小区域抑制（噪点/小洞）
+        onProgress?.('preprocess', 70)
+        const removeMask = new Uint8Array(n) // 1 表示移除（背景），0 保留
+        const keepMask = new Uint8Array(n) // 1 表示保留（前景），0 移除
+        const removeThresh = 10
+        const keepThresh = 245
+        for (let p = 0; p < n; p++) {
+          const ap = alpha[p] ?? 0
+          removeMask[p] = ap <= removeThresh ? 1 : 0
+          keepMask[p] = ap >= keepThresh ? 1 : 0
+        }
+
+        const visited = new Uint8Array(n)
+
+        // helper: process components on a mask
+        const processComponents = (mask: Uint8Array, minArea: number, onSmall: (idx: number) => void) => {
+          visited.fill(0)
+          for (let p = 0; p < n; p++) {
+            if (!mask[p] || visited[p]) continue
+            // BFS
+            const q: number[] = [p]
+            visited[p] = 1
+            const comp: number[] = []
+            while (q.length) {
+              const cur = q.shift()!
+              comp.push(cur)
+              const x = cur % w
+              // left
+              if (x > 0) {
+                const nb = cur - 1
+                if (mask[nb] && !visited[nb]) { visited[nb] = 1; q.push(nb) }
+              }
+              // right
+              if (x + 1 < w) {
+                const nb = cur + 1
+                if (mask[nb] && !visited[nb]) { visited[nb] = 1; q.push(nb) }
+              }
+              // up
+              if (cur >= w) {
+                const nb = cur - w
+                if (mask[nb] && !visited[nb]) { visited[nb] = 1; q.push(nb) }
+              }
+              // down
+              if (cur + w < n) {
+                const nb = cur + w
+                if (mask[nb] && !visited[nb]) { visited[nb] = 1; q.push(nb) }
+              }
+            }
+            if (comp.length < minArea) {
+              // too small
+              for (const idx of comp) onSmall(idx)
+            }
+          }
+        }
+
+        // 1) 小的“将被移除”区域：保留它们（避免小洞被抠掉）
+        if (minRemoveArea > 0) {
+          processComponents(removeMask, minRemoveArea, (idx) => {
+            // revert to keep
+            const a0 = origA[idx] ?? 255
+            alpha[idx] = a0
+            removeMask[idx] = 0
+            if (a0 >= keepThresh) keepMask[idx] = 1
+          })
+        }
+
+        // 2) 小的“保留”孤立区域：去除它们（消除小碎片）
+        if (minKeepArea > 0) {
+          processComponents(keepMask, minKeepArea, (idx) => {
+            alpha[idx] = 0
+            keepMask[idx] = 0
+            removeMask[idx] = 1
+          })
+        }
+
+        // 3) 仅在边缘扩大容差：找到前景边缘，膨胀 edgeRadius，再基于更大容差重算局部 alpha 并取更小值
+        if (edgeRadius > 0 && edgeExtraTol > 0) {
+          const edge = new Uint8Array(n)
+          const thrKeep = 180
+          const thrRem = 75
+          for (let p = 0; p < n; p++) {
+            const a = alpha[p] ?? 0
+            const isKeep = a >= thrKeep
+            if (!isKeep) continue
+            const x = p % w
+            const y = (p - x) / w
+            const check = (xx: number, yy: number) => {
+              if (xx < 0 || yy < 0 || xx >= w || yy >= h) return false
+              const q = yy * w + xx
+              return (alpha[q] ?? 255) <= thrRem
+            }
+            if (check(x - 1, y) || check(x + 1, y) || check(x, y - 1) || check(x, y + 1)) edge[p] = 1
+          }
+          // 膨胀 edge -> edgeDilated
+          const edgeDilated = new Uint8Array(n)
+          if (edgeRadius === 1) {
+            for (let p = 0; p < n; p++) if (edge[p]) {
+              const x = p % w, y = (p - (p % w)) / w
+              edgeDilated[p] = 1
+              if (x > 0) edgeDilated[p - 1] = 1
+              if (x + 1 < w) edgeDilated[p + 1] = 1
+              if (y > 0) edgeDilated[p - w] = 1
+              if (y + 1 < h) edgeDilated[p + w] = 1
+            }
+          } else {
+            // 简单的多次扩张（radius 次 4-邻域膨胀）
+            let cur = edge, next = edgeDilated
+            // 初始化 next = cur
+            next.set(cur)
+            for (let r = 0; r < edgeRadius; r++) {
+              for (let p = 0; p < n; p++) if (cur[p]) {
+                const x = p % w, y = (p - (p % w)) / w
+                next[p] = 1
+                if (x > 0) next[p - 1] = 1
+                if (x + 1 < w) next[p + 1] = 1
+                if (y > 0) next[p - w] = 1
+                if (y + 1 < h) next[p + w] = 1
+              }
+              // 交换缓冲
+              if (r < edgeRadius - 1) {
+                cur = new Uint8Array(next)
+              }
+            }
+          }
+
+          const tolLoEdge = Math.min(255, tolLo + edgeExtraTol)
+          const tolHiEdge = Math.min(255, tolLoEdge + soft)
+          for (let p = 0; p < n; p++) {
+            if (!edgeDilated[p]) continue
+            const a0 = origA[p] ?? 255
+            const d = distArr[p] ?? 0
+            let aEdge: number
+            if (d <= tolLoEdge) aEdge = 0
+            else if (soft > 0 && d < tolHiEdge) aEdge = Math.round(a0 * (d - tolLoEdge) / (tolHiEdge - tolLoEdge))
+            else aEdge = a0
+            if (aEdge < (alpha[p] ?? 255)) alpha[p] = aEdge
+          }
+        }
+
+        // 将 alpha 写回像素
+        for (let p = 0, i = 0; p < n; p++, i += 4) {
+          data[i + 3] = (alpha[p] ?? 0)
+        }
+
+        onProgress?.('composite', 90)
+        ctx.putImageData(id, 0, 0)
+        const out = canvas.toDataURL('image/png')
+        onProgress?.('done', 100)
+        return out
+      }
+
       if (backend === 'imgly') {
         onProgress?.('loading model', 10)
         // 动态引入，避免在未选择时增加包体或构建风险
