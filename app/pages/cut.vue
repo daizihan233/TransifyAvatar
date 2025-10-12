@@ -1,68 +1,65 @@
 <template>
-  <div class="cut-page">
-    <n-space vertical size="large">
-      <n-alert type="info" title="裁剪为正方形">
-        请拖动或缩放裁剪框（四角小点），选择正方形区域；裁剪框不会超出图片范围。
-      </n-alert>
+  <div class="cut-container">
+    <div v-if="!imageSrc" class="no-image">
+      <n-result status="404" title="未找到图片" description="请先上传图片">
+        <template #footer>
+          <n-button @click="router.push('/')">返回上传页面</n-button>
+        </template>
+      </n-result>
+    </div>
 
-      <div v-if="!imageSrc" class="no-image">
-        <n-result status="404" title="未找到图片" description="请先上传图片">
-          <template #footer>
-            <n-button type="primary" @click="router.push('/')">返回上传页面</n-button>
-          </template>
-        </n-result>
+    <div v-else class="cut-content">
+      <div class="header">
+        <h1>图片裁剪工具</h1>
+        <p>拖动裁剪框选择正方形区域，然后点击裁剪按钮</p>
       </div>
 
-      <n-grid v-else cols="1 900:2" x-gap="16" y-gap="16">
-        <n-grid-item>
-          <n-card title="裁剪区域" size="small" :bordered="true">
-            <div class="crop-container" ref="cropContainer">
-              <canvas ref="imageCanvas" class="image-canvas"></canvas>
-              <div
+      <div class="main-content">
+        <div class="crop-section">
+          <div class="section-title">裁剪区域</div>
+          <div class="crop-container" ref="cropContainer">
+            <canvas ref="imageCanvas" class="image-canvas"></canvas>
+            <div
                 ref="cropBox"
                 class="crop-box"
                 :style="cropBoxStyle"
                 @mousedown="startDrag"
-              >
-                <div class="crop-handle crop-handle-tl" @mousedown.stop="startResize('tl', $event)"></div>
-                <div class="crop-handle crop-handle-tr" @mousedown.stop="startResize('tr', $event)"></div>
-                <div class="crop-handle crop-handle-bl" @mousedown.stop="startResize('bl', $event)"></div>
-                <div class="crop-handle crop-handle-br" @mousedown.stop="startResize('br', $event)"></div>
-              </div>
+            >
+              <div class="crop-handle crop-handle-tl" @mousedown.stop="startResize('tl', $event)"></div>
+              <div class="crop-handle crop-handle-tr" @mousedown.stop="startResize('tr', $event)"></div>
+              <div class="crop-handle crop-handle-bl" @mousedown.stop="startResize('bl', $event)"></div>
+              <div class="crop-handle crop-handle-br" @mousedown.stop="startResize('br', $event)"></div>
+            </div>
+          </div>
+
+          <div class="controls">
+            <div class="control-group">
+              <label>裁剪框大小: {{ cropSize }}px</label>
+              <n-slider v-model:value="cropSize" :min="50" :max="maxCropSize" :step="10" />
             </div>
 
-            <n-form label-placement="left" label-width="auto" class="controls">
-              <n-form-item label="裁剪框大小">
-                <n-slider v-model:value="cropSize" :min="50" :max="maxCropSize" :step="10" />
-                <n-text depth="3" style="margin-left: 8px">{{ cropSize }}px</n-text>
-              </n-form-item>
-              <n-form-item label="图片缩放">
-                <n-slider v-model:value="scale" :min="0.1" :max="3" :step="0.1" />
-                <n-text depth="3" style="margin-left: 8px">{{ Math.round(scale * 100) }}%</n-text>
-              </n-form-item>
-            </n-form>
-          </n-card>
-        </n-grid-item>
-
-        <n-grid-item>
-          <n-card title="预览" size="small" :bordered="true">
-            <div class="preview-container">
-              <canvas ref="previewCanvas" class="preview-canvas"></canvas>
+            <div class="control-group">
+              <label>图片缩放: {{ Math.round(scale * 100) }}%</label>
+              <n-slider v-model:value="scale" :min="0.1" :max="3" :step="0.1" />
             </div>
-            <n-space vertical>
-              <n-space>
-                <n-button type="primary" @click="cropImage" :disabled="!imageLoaded">裁剪图片</n-button>
-                <n-button type="success" @click="downloadImage" :disabled="!croppedImageData">下载图片</n-button>
-              </n-space>
-              <n-space>
-                <n-button @click="reset">重置</n-button>
-                <n-button quaternary @click="router.push('/')">返回上传</n-button>
-              </n-space>
-            </n-space>
-          </n-card>
-        </n-grid-item>
-      </n-grid>
-    </n-space>
+          </div>
+        </div>
+
+        <div class="preview-section">
+          <div class="section-title">预览</div>
+          <div class="preview-container">
+            <canvas ref="previewCanvas" class="preview-canvas"></canvas>
+          </div>
+
+          <div class="action-buttons">
+            <n-button type="primary" @click="cropImage" :disabled="!imageLoaded">裁剪图片</n-button>
+            <n-button type="success" @click="downloadImage" :disabled="!croppedImageData">下载图片</n-button>
+            <n-button @click="reset">重置</n-button>
+            <n-button @click="router.push('/')">返回上传</n-button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -199,30 +196,21 @@ const updateCanvasInfo = () => {
     drawHeight = canvas.height
     drawWidth = drawHeight * imageRatio
   }
-
-  // 添加缩放后的实际显示尺寸和位置
   canvasInfo.imageWidth = drawWidth
   canvasInfo.imageHeight = drawHeight
   canvasInfo.imageX = (canvas.width - drawWidth) / 2
   canvasInfo.imageY = (canvas.height - drawHeight) / 2
-
-  // 缩放后的实际显示尺寸
-  canvasInfo.scaledWidth = drawWidth * scale.value
-  canvasInfo.scaledHeight = drawHeight * scale.value
-  canvasInfo.scaledX = (canvas.width - canvasInfo.scaledWidth) / 2
-  canvasInfo.scaledY = (canvas.height - canvasInfo.scaledHeight) / 2
 }
 
 // 绘制图片到Canvas
 const drawImage = () => {
   if (!ctx || !image) return
   ctx.clearRect(0, 0, imageCanvas.value.width, imageCanvas.value.height)
-
-  // 使用更新后的缩放信息
-  const { scaledX, scaledY, scaledWidth, scaledHeight } = canvasInfo
-  ctx.save()
-  ctx.drawImage(image, scaledX, scaledY, scaledWidth, scaledHeight)
-  ctx.restore()
+  const scaledWidth = canvasInfo.imageWidth * scale.value
+  const scaledHeight = canvasInfo.imageHeight * scale.value
+  const x = (imageCanvas.value.width - scaledWidth) / 2
+  const y = (imageCanvas.value.height - scaledHeight) / 2
+  ctx.save(); ctx.drawImage(image, x, y, scaledWidth, scaledHeight); ctx.restore()
 }
 
 // 开始拖动
@@ -257,12 +245,8 @@ const handleDrag = (e) => {
     let newX = cropBoxStartX + deltaX
     let newY = cropBoxStartY + deltaY
     const size = Number.parseInt(cropBoxStyle.value.width)
-
-    // 限制在图片显示区域内
-    const { scaledX, scaledY, scaledWidth, scaledHeight } = canvasInfo
-    newX = Math.max(scaledX, Math.min(newX, scaledX + scaledWidth - size))
-    newY = Math.max(scaledY, Math.min(newY, scaledY + scaledHeight - size))
-
+    newX = Math.max(0, Math.min(newX, canvasInfo.width - size))
+    newY = Math.max(0, Math.min(newY, canvasInfo.height - size))
     cropBoxStyle.value = { ...cropBoxStyle.value, left: `${newX}px`, top: `${newY}px` }
     return
   }
@@ -281,8 +265,8 @@ const handleDrag = (e) => {
       const anchorX = cropBoxStartX + cropBoxStartSize
       const anchorY = cropBoxStartY + cropBoxStartSize
       const candSize = Math.min(
-        anchorX - Math.max(0, Math.min(mouseX, anchorX)),
-        anchorY - Math.max(0, Math.min(mouseY, anchorY))
+          anchorX - Math.max(0, Math.min(mouseX, anchorX)),
+          anchorY - Math.max(0, Math.min(mouseY, anchorY))
       )
       newSize = Math.max(minCropSize, Math.min(candSize, maxSize))
       newLeft = Math.max(0, anchorX - newSize)
@@ -293,8 +277,8 @@ const handleDrag = (e) => {
       const anchorX = cropBoxStartX
       const anchorY = cropBoxStartY + cropBoxStartSize
       const candSize = Math.min(
-        Math.max(0, Math.min(mouseX, canvasInfo.width)) - anchorX,
-        anchorY - Math.max(0, Math.min(mouseY, anchorY))
+          Math.max(0, Math.min(mouseX, canvasInfo.width)) - anchorX,
+          anchorY - Math.max(0, Math.min(mouseY, anchorY))
       )
       newSize = Math.max(minCropSize, Math.min(candSize, maxSize, canvasInfo.width - anchorX))
       newLeft = anchorX
@@ -305,8 +289,8 @@ const handleDrag = (e) => {
       const anchorX = cropBoxStartX + cropBoxStartSize
       const anchorY = cropBoxStartY
       const candSize = Math.min(
-        anchorX - Math.max(0, Math.min(mouseX, anchorX)),
-        Math.max(0, Math.min(mouseY, canvasInfo.height)) - anchorY
+          anchorX - Math.max(0, Math.min(mouseX, anchorX)),
+          Math.max(0, Math.min(mouseY, canvasInfo.height)) - anchorY
       )
       newSize = Math.max(minCropSize, Math.min(candSize, maxSize, anchorX))
       newLeft = Math.max(0, anchorX - newSize)
@@ -317,8 +301,8 @@ const handleDrag = (e) => {
       const anchorX = cropBoxStartX
       const anchorY = cropBoxStartY
       const candSize = Math.min(
-        Math.max(0, Math.min(mouseX, canvasInfo.width)) - anchorX,
-        Math.max(0, Math.min(mouseY, canvasInfo.height)) - anchorY
+          Math.max(0, Math.min(mouseX, canvasInfo.width)) - anchorX,
+          Math.max(0, Math.min(mouseY, canvasInfo.height)) - anchorY
       )
       newSize = Math.max(minCropSize, Math.min(candSize, maxSize, canvasInfo.width - anchorX, canvasInfo.height - anchorY))
       newLeft = anchorX
@@ -340,72 +324,33 @@ const stopDrag = () => { isDragging = false; isResizing = false; resizeHandle = 
 // 裁剪图片
 const cropImage = () => {
   if (!image || !previewCtx) return
-
   const cropX = Number.parseInt(cropBoxStyle.value.left)
   const cropY = Number.parseInt(cropBoxStyle.value.top)
-  const cropSizeValue = Number.parseInt(cropBoxStyle.value.width)
-
-  // 正确计算缩放比例和裁剪区域
-  const { scaledX, scaledY, scaledWidth, scaledHeight } = canvasInfo
-
-  // 确保裁剪框在图片显示区域内
-  const effectiveCropX = Math.max(0, cropX - scaledX)
-  const effectiveCropY = Math.max(0, cropY - scaledY)
-  const effectiveCropSize = Math.min(
-      cropSizeValue,
-      scaledWidth - effectiveCropX,
-      scaledHeight - effectiveCropY
-  )
-
-  if (effectiveCropSize <= 0) {
-    console.error('裁剪区域无效')
-    return
-  }
-
-  // 计算原始图片坐标
-  const scaleX = image.width / scaledWidth
-  const scaleY = image.height / scaledHeight
-  const srcX = effectiveCropX * scaleX
-  const srcY = effectiveCropY * scaleY
-  const srcSize = effectiveCropSize * Math.min(scaleX, scaleY)
-
+  const scaleX = image.width / (canvasInfo.imageWidth * scale.value)
+  const scaleY = image.height / (canvasInfo.imageHeight * scale.value)
+  const relativeX = cropX - (canvasInfo.width - canvasInfo.imageWidth * scale.value) / 2
+  const relativeY = cropY - (canvasInfo.height - canvasInfo.imageHeight * scale.value) / 2
+  const srcX = Math.max(0, relativeX * scaleX)
+  const srcY = Math.max(0, relativeY * scaleY)
+  const srcSize = Math.min(cropSize.value * scaleX, image.width - srcX, image.height - srcY)
   const tempCanvas = document.createElement('canvas')
-  tempCanvas.width = srcSize
-  tempCanvas.height = srcSize
+  tempCanvas.width = srcSize; tempCanvas.height = srcSize
   const tempCtx = tempCanvas.getContext('2d')
-
-  // 高质量图片绘制
-  tempCtx.imageSmoothingEnabled = true
-  tempCtx.imageSmoothingQuality = 'high'
   tempCtx.drawImage(image, srcX, srcY, srcSize, srcSize, 0, 0, srcSize, srcSize)
-
-  // 预览绘制
   previewCtx.clearRect(0, 0, previewCanvas.value.width, previewCanvas.value.height)
-  previewCtx.imageSmoothingEnabled = true
-  previewCtx.imageSmoothingQuality = 'high'
   previewCtx.drawImage(tempCanvas, 0, 0, srcSize, srcSize, 0, 0, previewCanvas.value.width, previewCanvas.value.height)
-
-  croppedImageData.value = tempCanvas.toDataURL('image/png')
-  croppedImage.value = croppedImageData.value
+  croppedImageData.value = tempCanvas.toDataURL('image/png'); croppedImage.value = croppedImageData.value
 }
 
 const downloadImage = () => { if (croppedImageData.value) { const link = document.createElement('a'); link.download = 'cropped-image.png'; link.href = croppedImageData.value; link.click() } }
 
 const reset = () => {
   scale.value = 1
-  // 使用缩放后的图片显示区域来计算初始位置
-  const { scaledX, scaledY, scaledWidth, scaledHeight } = canvasInfo
-  const initialLeft = scaledX + (scaledWidth - cropSize.value) / 2
-  const initialTop = scaledY + (scaledHeight - cropSize.value) / 2
-  cropBoxStyle.value = {
-    width: `${cropSize.value}px`,
-    height: `${cropSize.value}px`,
-    left: `${initialLeft}px`,
-    top: `${initialTop}px`
-  }
+  const initialLeft = (canvasInfo.width - cropSize.value) / 2
+  const initialTop = (canvasInfo.height - cropSize.value) / 2
+  cropBoxStyle.value = { width: `${cropSize.value}px`, height: `${cropSize.value}px`, left: `${initialLeft}px`, top: `${initialTop}px` }
   if (previewCtx) previewCtx.clearRect(0, 0, previewCanvas.value.width, previewCanvas.value.height)
-  croppedImageData.value = null
-  croppedImage.value = null
+  croppedImageData.value = null; croppedImage.value = null
   drawImage()
 }
 
@@ -421,20 +366,72 @@ watch(cropSize, () => {
   const currentCenterY = currentTop + Number.parseInt(cropBoxStyle.value.height) / 2
   const newLeft = Math.max(0, Math.min(currentCenterX - cropSize.value / 2, canvasInfo.width - cropSize.value))
   const newTop = Math.max(0, Math.min(currentCenterY - cropSize.value / 2, canvasInfo.height - cropSize.value))
-  cropBoxStyle.value = { width: `${cropSize.value}px`, height: `${cropSize.value}px`, left: `${newLeft}px`, top: `${newTop}px` }
+  cropBoxStyle.value = { width: `${cropSize.value}px`, height: `${newTop === newTop ? cropSize.value : cropSize.value}px`, left: `${newLeft}px`, top: `${newTop}px` }
 })
 </script>
 
 <style scoped>
-.cut-page {
-  padding: 16px;
+.cut-container {
+  min-height: 100vh;
+  padding: 20px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
 }
 
 .no-image {
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 50vh;
+  height: 80vh;
+}
+
+.cut-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  background: white;
+  border-radius: 15px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.header {
+  background: linear-gradient(90deg, #4b6cb7 0%, #182848 100%);
+  color: white;
+  padding: 25px;
+  text-align: center;
+}
+
+.header h1 {
+  font-size: 2.2rem;
+  margin-bottom: 10px;
+}
+
+.header p {
+  font-size: 1.1rem;
+  opacity: 0.9;
+}
+
+.main-content {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 20px;
+  gap: 20px;
+}
+
+.crop-section {
+  flex: 1;
+  min-width: 500px;
+}
+
+.preview-section {
+  flex: 0 0 350px;
+}
+
+.section-title {
+  font-size: 1.3rem;
+  margin-bottom: 15px;
+  color: #4b6cb7;
+  border-bottom: 2px solid #4b6cb7;
+  padding-bottom: 5px;
 }
 
 .crop-container {
@@ -445,6 +442,7 @@ watch(cropSize, () => {
   border-radius: 5px;
   margin-bottom: 20px;
   overflow: hidden;
+  background: #f8f9fa;
 }
 
 .image-canvas {
@@ -498,18 +496,32 @@ watch(cropSize, () => {
 }
 
 .controls {
-  margin-top: 12px;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 5px;
+}
+
+.control-group {
+  margin-bottom: 20px;
+}
+
+.control-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: #333;
 }
 
 .preview-container {
   width: 100%;
-  height: 320px;
-  border: 1px solid rgba(127, 127, 127, .3);
-  border-radius: 8px;
-  margin-bottom: 12px;
+  height: 300px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  margin-bottom: 20px;
   display: flex;
   justify-content: center;
   align-items: center;
+  background: #f8f9fa;
   overflow: hidden;
 }
 
@@ -517,6 +529,29 @@ watch(cropSize, () => {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  display: block;
+}
+
+.action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    flex-direction: column;
+  }
+
+  .crop-section, .preview-section {
+    min-width: 100%;
+  }
+
+  .crop-container {
+    height: 300px;
+  }
+
+  .preview-container {
+    height: 250px;
+  }
 }
 </style>
