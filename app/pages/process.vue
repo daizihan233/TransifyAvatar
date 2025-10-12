@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUploadedImage } from '~~/composables/useUploadedImage'
-import { useMatting } from '~~/composables/useMatting'
+import { useMatting, type MattingBackend } from '~~/composables/useMatting'
 
 const router = useRouter()
 const { croppedImage, mattedImage } = useUploadedImage()
 const { removeBg, loading, error } = useMatting()
+
+// Backend selection first
+const backend = ref<MattingBackend>('transformers')
+const selected = ref(false)
 
 // UI state
 const percent = ref(0)
@@ -33,14 +37,16 @@ async function startProcess() {
     router.replace('/cut')
     return
   }
+  selected.value = true
   running.value = true
   percent.value = 0
   stage.value = stageLabel('loading model')
+  localResult.value = null
   try {
     const out = await removeBg(croppedImage.value, (s, p) => {
       stage.value = stageLabel(s)
       if (typeof p === 'number') percent.value = Math.max(0, Math.min(100, Math.round(p)))
-    })
+    }, { backend: backend.value })
     localResult.value = out
     mattedImage.value = out
     percent.value = 100
@@ -50,6 +56,14 @@ async function startProcess() {
   } finally {
     running.value = false
   }
+}
+
+function reselectBackend() {
+  if (running.value) return
+  selected.value = false
+  localResult.value = null
+  stage.value = ''
+  percent.value = 0
 }
 
 function downloadResult() {
@@ -62,13 +76,11 @@ function downloadResult() {
 
 function backToCut() { router.push('/cut') }
 function backHome() { router.push('/') }
-
-onMounted(() => { startProcess() })
 </script>
 
 <template>
   <div class="process-page">
-    <n-card title="AI 去背景处理中" size="large" class="panel">
+    <n-card title="AI 去背景" size="large" class="panel">
       <div v-if="!croppedImage" class="center">
         <n-result status="404" title="没有可处理的图片" description="请先完成裁剪">
           <template #footer>
@@ -78,6 +90,32 @@ onMounted(() => { startProcess() })
       </div>
 
       <template v-else>
+        <div class="mt">
+          <n-space align="center" justify="space-between">
+            <div>
+              <n-text depth="3">算法后端</n-text>
+              <template v-if="!selected">
+                <n-radio-group v-model:value="backend" size="small" style="margin-left: 8px;">
+                  <n-radio value="transformers">精细（RMBG-1.4）</n-radio>
+                  <n-radio value="imgly">快速（IMG.LY）</n-radio>
+                </n-radio-group>
+              </template>
+              <template v-else>
+                <n-tag type="primary" size="small" style="margin-left: 8px;">
+                  已选择：{{ backend === 'transformers' ? 'RMBG（Transformers）' : 'IMG.LY' }}
+                </n-tag>
+              </template>
+            </div>
+            <div>
+              <n-button v-if="!selected" type="primary" :loading="running || loading" @click="startProcess">开始处理</n-button>
+              <n-space v-else align="center">
+                <n-button tertiary size="small" :disabled="running || loading" @click="reselectBackend">重选模型</n-button>
+                <n-button tertiary size="small" :loading="running || loading" @click="startProcess">重试当前后端</n-button>
+              </n-space>
+            </div>
+          </n-space>
+        </div>
+
         <div v-if="running || loading" class="progress">
           <n-progress type="line" :percentage="percent" indicator-placement="inside" processing :height="18" />
           <n-text depth="3" style="margin-top: 8px; display:block;">{{ stage }}</n-text>
