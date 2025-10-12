@@ -29,5 +29,7 @@ export default defineNuxtConfig({
             })
         ]
     },
-    css: [new URL('./assets/main.css', import.meta.url).pathname]
+    css: [
+        new URL('./assets/main.css', import.meta.url).pathname,
+    ]
 })

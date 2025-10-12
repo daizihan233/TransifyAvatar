@@ -2,8 +2,9 @@
   <n-upload
       multiple
       directory-dnd
-      action="https://www.mocky.io/v2/5e4bafc63100007100d8b70f"
+      :on-before-upload="handleBeforeUpload"
       :max="1"
+      accept="image/*"
   >
     <n-upload-dragger>
       <div style="margin-bottom: 12px">
@@ -23,5 +24,23 @@
 
 <script setup>
 import { Archive } from "@vicons/ionicons5";
-import {NIcon, NUpload, NUploadDragger, NText, NP} from "naive-ui";
+import { NIcon, NUpload, NUploadDragger, NText, NP } from "naive-ui";
+import { useRouter } from "vue-router";
+import { useUploadedImage } from "~~/composables/useUploadedImage.js";
+
+const router = useRouter();
+const { uploadedImage, croppedImage } = useUploadedImage();
+
+function handleBeforeUpload({ file }) {
+  if (!file) return false;
+  const reader = new FileReader();
+  reader.onload = () => {
+    uploadedImage.value = String(reader.result || "");
+    croppedImage.value = null;
+    router.push("/cut");
+  };
+  reader.readAsDataURL(file.file || file);
+  // prevent default upload
+  return false;
+}
 </script>

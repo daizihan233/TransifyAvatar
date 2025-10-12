@@ -30,6 +30,7 @@
 
 <script setup>
 import { ref, onMounted, watch } from "vue";
+import { useRoute } from "vue-router";
 import {
   zhCN, dateZhCN , NConfigProvider, darkTheme, NDialogProvider, NMessageProvider, useOsTheme, NGlobalStyle
 } from "naive-ui";
@@ -47,23 +48,22 @@ if (process.client) {
   watch(osThemeRef, (val) => applyTheme(val));
 }
 
+// Steps follow route
 const currentRef = ref(1);
 const currentStatus = ref("process");
 const current = currentRef;
-
-function next() {
-  if (currentRef.value === null)
-    currentRef.value = 1;
-  else if (currentRef.value >= 4)
-    currentRef.value = null;
-  else currentRef.value++;
-}
-
-function prev() {
-  if (currentRef.value === 0)
-    currentRef.value = null;
-  else if (currentRef.value === null)
-    currentRef.value = 4;
-  else currentRef.value--;
-}
+const route = useRoute();
+const stepMap = {
+  "/": 1,
+  "/cut": 2,
+  "/process": 3,
+  "/done": 4
+};
+watch(
+  () => route.path,
+  (p) => {
+    currentRef.value = stepMap[p] || 1;
+  },
+  { immediate: true }
+);
 </script>
