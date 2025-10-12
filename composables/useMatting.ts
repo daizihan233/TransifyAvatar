@@ -4,6 +4,8 @@
 
 import { ref } from 'vue'
 import { useRuntimeConfig } from '#app'
+import { onMounted } from 'vue'
+
 
 let pipePromise: Promise<any> | null = null
 let initialized = false
@@ -39,20 +41,38 @@ export type MattingBackend = 'transformers' | 'imgly' | 'chroma'
 export function useMatting() {
   const loading = ref(false)
   const error = ref<string | null>(null)
+    // 在客户端加载模型
+    onMounted(async () => {
+        try {
+            await ensureLoaded()
+        } catch (e) {
+            console.error('Failed to load matting model:', e)
+        }
+    })
 
   // 输入：裁剪后的 dataURL（PNG/JPEG 均可）
   // 输出：PNG dataURL，带透明通道。
-  async function removeBg(
+  const removeBg = async (
     dataUrl: string,
     onProgress?: (stage: string, percent?: number) => void,
     options?: { backend?: MattingBackend, chroma?: { color: string, tolerance?: number, softness?: number, minRemoveArea?: number, minKeepArea?: number, edgeRadius?: number, edgeExtraTolerance?: number } }
-  ): Promise<string> {
-    const backend: MattingBackend = options?.backend ?? 'transformers'
+  ): Promise<string> => {
+    if (!process.client) {
+      throw new Error('Matting can only run in browser')
+    }
 
     if (!dataUrl) throw new Error('No image provided')
     loading.value = true
     error.value = null
+
     try {
+      // 确保模型已加载
+      if (!initialized) {
+        await ensureLoaded()
+      }
+
+      const backend: MattingBackend = options?.backend ?? 'transformers'
+
       if (backend === 'chroma') {
         // 纯色抠图（按用户选择的颜色去除背景）
         onProgress?.('reading image', 20)
@@ -194,7 +214,7 @@ export function useMatting() {
           }
         }
 
-        // 1) 小的“将被移除”区域：保留它们（避免小洞被抠掉）
+        // 1) 小的"将被移除"区域：保留它们（避免小洞被抠掉）
         if (minRemoveArea > 0) {
           processComponents(removeMask, minRemoveArea, (idx) => {
             // revert to keep
@@ -205,7 +225,7 @@ export function useMatting() {
           })
         }
 
-        // 2) 小的“保留”孤立区域：去除它们（消除小碎片）
+        // 2) 小的"保留"孤立区域：去除它们（消除小碎片）
         if (minKeepArea > 0) {
           processComponents(keepMask, minKeepArea, (idx) => {
             alpha[idx] = 0
