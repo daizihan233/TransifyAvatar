@@ -43,7 +43,8 @@
 
           <div class="action-buttons">
             <n-button type="primary" @click="cropImage" :disabled="!imageLoaded">裁剪图片</n-button>
-            <n-button type="success" @click="downloadImage" :disabled="!croppedImageData">下载图片</n-button>
+            <n-button type="info" @click="goToProcess" :disabled="!croppedImageData">去背景处理</n-button>
+            <n-button type="success" @click="downloadImage" :disabled="!croppedImageData">下载裁剪PNG</n-button>
             <n-button @click="reset">重置</n-button>
             <n-button @click="router.push('/')">返回上传</n-button>
           </div>
@@ -334,7 +335,9 @@ const cropImage = () => {
   croppedImage.value = croppedImageData.value
 }
 
-const downloadImage = () => { if (croppedImageData.value) { const link = document.createElement('a'); link.download = 'cropped-image.png'; link.href = croppedImageData.value; link.click() } }
+function goToProcess() { router.push('/process') }
+
+function downloadImage() { if (croppedImageData.value) { const link = document.createElement('a'); link.download = 'cropped-image.png'; link.href = croppedImageData.value; link.click() } }
 
 const reset = () => {
   updateDisplayedInfo()

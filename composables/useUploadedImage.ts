@@ -2,6 +2,6 @@
 export function useUploadedImage() {
   const uploadedImage = useState<string | null>('uploaded-image', () => null)
   const croppedImage = useState<string | null>('cropped-image', () => null)
-  return { uploadedImage, croppedImage }
+  const mattedImage = useState<string | null>('matted-image', () => null)
+  return { uploadedImage, croppedImage, mattedImage }
 }
-
