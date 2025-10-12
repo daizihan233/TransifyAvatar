@@ -9,11 +9,6 @@
     </div>
 
     <div v-else class="cut-content">
-      <div class="header">
-        <h1>图片裁剪工具</h1>
-        <p>拖动裁剪框选择正方形区域，然后点击裁剪按钮</p>
-      </div>
-
       <div class="main-content">
         <div class="crop-section">
           <div class="section-title">裁剪区域</div>
@@ -34,12 +29,12 @@
 
           <div class="controls">
             <div class="control-group">
-              <label>裁剪框大小: {{ cropSize }}px</label>
+              <n-text>裁剪框大小: {{ cropSize }}px</n-text>
               <n-slider v-model:value="cropSize" :min="50" :max="maxCropSize" :step="10" />
             </div>
 
             <div class="control-group">
-              <label>图片缩放: {{ Math.round(scale * 100) }}%</label>
+              <n-text>图片缩放: {{ Math.round(scale * 100) }}%</n-text>
               <n-slider v-model:value="scale" :min="0.1" :max="3" :step="0.1" />
             </div>
           </div>
@@ -374,7 +369,6 @@ watch(cropSize, () => {
 .cut-container {
   min-height: 100vh;
   padding: 20px;
-  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
 }
 
 .no-image {
@@ -387,17 +381,9 @@ watch(cropSize, () => {
 .cut-content {
   max-width: 1200px;
   margin: 0 auto;
-  background: white;
   border-radius: 15px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
   overflow: hidden;
-}
-
-.header {
-  background: linear-gradient(90deg, #4b6cb7 0%, #182848 100%);
-  color: white;
-  padding: 25px;
-  text-align: center;
 }
 
 .header h1 {
@@ -442,7 +428,6 @@ watch(cropSize, () => {
   border-radius: 5px;
   margin-bottom: 20px;
   overflow: hidden;
-  background: #f8f9fa;
 }
 
 .image-canvas {
@@ -467,7 +452,6 @@ watch(cropSize, () => {
   position: absolute;
   width: 10px;
   height: 10px;
-  background: #4b6cb7;
   border: 1px solid white;
 }
 
@@ -497,7 +481,6 @@ watch(cropSize, () => {
 
 .controls {
   padding: 15px;
-  background: #f8f9fa;
   border-radius: 5px;
 }
 
@@ -521,7 +504,6 @@ watch(cropSize, () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  background: #f8f9fa;
   overflow: hidden;
 }
 
