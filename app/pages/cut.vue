@@ -100,8 +100,8 @@ let cropBoxStartSize = 0
 const minCropSize = 50
 let suppressCropSizeWatch = false
 
-// Canvas绘制信息
-let canvasInfo = { x: 0, y: 0, width: 0, height: 0, imageWidth: 0, imageHeight: 0, imageX: 0, imageY: 0 }
+// Canvas绘制信息（区分 CSS 尺寸 与 画布内像素尺寸）
+let canvasInfo = { x: 0, y: 0, width: 0, height: 0, cssScaleX: 1, cssScaleY: 1, imageWidth: 0, imageHeight: 0, imageX: 0, imageY: 0 }
 
 // 监听图片数据变化
 watch(uploadedImage, (newVal) => {
@@ -151,36 +151,42 @@ const initCanvas = () => {
     canvasHeight = Math.min(containerHeight, image.height)
     canvasWidth = canvasHeight * imageRatio
   }
-  imageCanvas.value.width = canvasWidth
-  imageCanvas.value.height = canvasHeight
 
-  // 预览
+  // 设置画布的内部像素尺寸（同时也作为元素的自然渲染尺寸）
+  imageCanvas.value.width = Math.max(1, Math.round(canvasWidth))
+  imageCanvas.value.height = Math.max(1, Math.round(canvasHeight))
+
+  // 预览固定 300x300
   previewCanvas.value.width = 300
   previewCanvas.value.height = 300
 
   ctx = imageCanvas.value.getContext('2d')
   previewCtx = previewCanvas.value.getContext('2d')
 
-  maxCropSize.value = Math.min(canvasWidth, canvasHeight, 500)
-  cropSize.value = Math.min(200, maxCropSize.value)
-
   updateCanvasInfo()
 
-  const initialLeft = (canvasWidth - cropSize.value) / 2
-  const initialTop = (canvasHeight - cropSize.value) / 2
+  maxCropSize.value = Math.min(canvasInfo.width, canvasInfo.height, 500)
+  cropSize.value = Math.min(200, maxCropSize.value)
+
+  const initialLeft = (canvasInfo.width - cropSize.value) / 2
+  const initialTop = (canvasInfo.height - cropSize.value) / 2
   cropBoxStyle.value = { width: `${cropSize.value}px`, height: `${cropSize.value}px`, left: `${initialLeft}px`, top: `${initialTop}px` }
 }
 
-// 更新Canvas信息
+// 更新Canvas信息（使用 CSS 尺寸，确保与裁剪框一致）
 const updateCanvasInfo = () => {
-  if (!imageCanvas.value) return
+  if (!imageCanvas.value || !cropContainer.value) return
   const canvas = imageCanvas.value
   const rect = canvas.getBoundingClientRect()
   const containerRect = cropContainer.value.getBoundingClientRect()
   canvasInfo.x = rect.left - containerRect.left
   canvasInfo.y = rect.top - containerRect.top
-  canvasInfo.width = canvas.width
-  canvasInfo.height = canvas.height
+  canvasInfo.width = rect.width
+  canvasInfo.height = rect.height
+
+  // CSS 到 画布内部像素的缩放比例（通常相同，但保留以避免样式差异）
+  canvasInfo.cssScaleX = rect.width / (canvas.width || 1)
+  canvasInfo.cssScaleY = rect.height / (canvas.height || 1)
 
   const imageRatio = image.width / image.height
   let drawWidth, drawHeight
@@ -197,7 +203,7 @@ const updateCanvasInfo = () => {
   canvasInfo.imageY = (canvas.height - drawHeight) / 2
 }
 
-// 绘制图片到Canvas
+// 绘制图片到Canvas（仅用于可视化；源数据始终来自原图像）
 const drawImage = () => {
   if (!ctx || !image) return
   ctx.clearRect(0, 0, imageCanvas.value.width, imageCanvas.value.height)
@@ -231,7 +237,7 @@ function startResize(handle, e) {
   }
 }
 
-// 处理拖动/缩放
+// 处理拖动/缩放（使用 CSS 尺寸，约束在 canvas 可视区域内）
 const handleDrag = (e) => {
   if (!isDragging && !isResizing) return
   if (isDragging) {
@@ -316,25 +322,59 @@ const handleDrag = (e) => {
 // 停止拖动
 const stopDrag = () => { isDragging = false; isResizing = false; resizeHandle = ''; if (cropBox.value) cropBox.value.style.cursor = 'grab' }
 
-// 裁剪图片
+// 裁剪图片（基于原图像像素进行裁剪）
 const cropImage = () => {
-  if (!image || !previewCtx) return
-  const cropX = Number.parseInt(cropBoxStyle.value.left)
-  const cropY = Number.parseInt(cropBoxStyle.value.top)
-  const scaleX = image.width / (canvasInfo.imageWidth * scale.value)
-  const scaleY = image.height / (canvasInfo.imageHeight * scale.value)
-  const relativeX = cropX - (canvasInfo.width - canvasInfo.imageWidth * scale.value) / 2
-  const relativeY = cropY - (canvasInfo.height - canvasInfo.imageHeight * scale.value) / 2
-  const srcX = Math.max(0, relativeX * scaleX)
-  const srcY = Math.max(0, relativeY * scaleY)
-  const srcSize = Math.min(cropSize.value * scaleX, image.width - srcX, image.height - srcY)
+  if (!image || !previewCtx || !imageCanvas.value) return
+
+  // 裁剪框（CSS 像素）
+  const cropXCss = Number.parseInt(cropBoxStyle.value.left)
+  const cropYCss = Number.parseInt(cropBoxStyle.value.top)
+  const cropSizeCss = Number.parseInt(cropBoxStyle.value.width)
+
+  // 将 CSS 坐标转换为画布内部像素坐标
+  const rect = imageCanvas.value.getBoundingClientRect()
+  const cssToCanvasScaleX = (imageCanvas.value.width || 1) / (rect.width || 1)
+  const cssToCanvasScaleY = (imageCanvas.value.height || 1) / (rect.height || 1)
+  const cropXCanvas = cropXCss * cssToCanvasScaleX
+  const cropYCanvas = cropYCss * cssToCanvasScaleY
+  const cropSizeCanvas = cropSizeCss * ((cssToCanvasScaleX + cssToCanvasScaleY) / 2)
+
+  // 计算画布中已缩放后的图片相对位置（画布内部像素）
+  const displayedImgW = canvasInfo.imageWidth * scale.value
+  const displayedImgH = canvasInfo.imageHeight * scale.value
+  const displayedImgX = (imageCanvas.value.width - displayedImgW) / 2
+  const displayedImgY = (imageCanvas.value.height - displayedImgH) / 2
+
+  // 裁剪框与图片显示区域的相对关系（画布内部像素）
+  const relativeX = cropXCanvas - displayedImgX
+  const relativeY = cropYCanvas - displayedImgY
+
+  // 将画布内部像素映射到原图像像素
+  const scaleXToSrc = image.width / displayedImgW
+  const scaleYToSrc = image.height / displayedImgH
+  const srcX = Math.max(0, Math.floor(relativeX * scaleXToSrc))
+  const srcY = Math.max(0, Math.floor(relativeY * scaleYToSrc))
+  const srcSize = Math.max(1, Math.floor(Math.min(
+    cropSizeCanvas * scaleXToSrc,
+    cropSizeCanvas * scaleYToSrc,
+    image.width - srcX,
+    image.height - srcY
+  )))
+
+  // 在离屏画布上基于原图裁剪
   const tempCanvas = document.createElement('canvas')
-  tempCanvas.width = srcSize; tempCanvas.height = srcSize
+  tempCanvas.width = srcSize
+  tempCanvas.height = srcSize
   const tempCtx = tempCanvas.getContext('2d')
   tempCtx.drawImage(image, srcX, srcY, srcSize, srcSize, 0, 0, srcSize, srcSize)
+
+  // 更新右侧预览（缩放到 300x300 但不会影响下载质量）
   previewCtx.clearRect(0, 0, previewCanvas.value.width, previewCanvas.value.height)
   previewCtx.drawImage(tempCanvas, 0, 0, srcSize, srcSize, 0, 0, previewCanvas.value.width, previewCanvas.value.height)
-  croppedImageData.value = tempCanvas.toDataURL('image/png'); croppedImage.value = croppedImageData.value
+
+  // 存储基于原图像素的裁剪结果
+  croppedImageData.value = tempCanvas.toDataURL('image/png')
+  croppedImage.value = croppedImageData.value
 }
 
 const downloadImage = () => { if (croppedImageData.value) { const link = document.createElement('a'); link.download = 'cropped-image.png'; link.href = croppedImageData.value; link.click() } }
@@ -346,10 +386,11 @@ const reset = () => {
   cropBoxStyle.value = { width: `${cropSize.value}px`, height: `${cropSize.value}px`, left: `${initialLeft}px`, top: `${initialTop}px` }
   if (previewCtx) previewCtx.clearRect(0, 0, previewCanvas.value.width, previewCanvas.value.height)
   croppedImageData.value = null; croppedImage.value = null
+  updateCanvasInfo()
   drawImage()
 }
 
-const handleResize = () => { if (imageLoaded.value) { initCanvas(); drawImage() } }
+const handleResize = () => { if (imageLoaded.value) { updateCanvasInfo(); initCanvas(); drawImage() } }
 
 watch(scale, () => { if (imageLoaded.value) drawImage() })
 
@@ -361,7 +402,7 @@ watch(cropSize, () => {
   const currentCenterY = currentTop + Number.parseInt(cropBoxStyle.value.height) / 2
   const newLeft = Math.max(0, Math.min(currentCenterX - cropSize.value / 2, canvasInfo.width - cropSize.value))
   const newTop = Math.max(0, Math.min(currentCenterY - cropSize.value / 2, canvasInfo.height - cropSize.value))
-  cropBoxStyle.value = { width: `${cropSize.value}px`, height: `${newTop === newTop ? cropSize.value : cropSize.value}px`, left: `${newLeft}px`, top: `${newTop}px` }
+  cropBoxStyle.value = { width: `${cropSize.value}px`, height: `${cropSize.value}px`, left: `${newLeft}px`, top: `${newTop}px` }
 })
 </script>
 
@@ -428,12 +469,16 @@ watch(cropSize, () => {
   border-radius: 5px;
   margin-bottom: 20px;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .image-canvas {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+  /* 不强制拉伸到容器，使用画布自身尺寸显示，避免 CSS/像素不一致 */
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
 }
 
 .crop-box {
