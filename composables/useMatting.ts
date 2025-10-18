@@ -3,12 +3,13 @@
 
 import { ref, onMounted } from 'vue'
 import { removeBackgroundChroma, type ChromaOptions } from './matting/chromaKey'
+import { removeBackgroundChromaAnime, type ChromaAnimeOptions } from './matting/chromaKeyAnime'
 import { removeBackgroundImgly } from './matting/imgly'
 import { removeBackgroundTransformers, ensureLoaded } from './matting/transformers'
 
-export type MattingBackend = 'transformers' | 'imgly' | 'chroma'
+export type MattingBackend = 'transformers' | 'imgly' | 'chroma' | 'chroma-anime'
 
-export type { ChromaOptions }
+export type { ChromaOptions, ChromaAnimeOptions }
 
 export function useMatting() {
   const loading = ref(false)
@@ -28,6 +29,7 @@ export function useMatting() {
     options?: {
       backend?: MattingBackend
       chroma?: ChromaOptions
+      chromaAnime?: ChromaAnimeOptions
     }
   ): Promise<string> => {
     if (!dataUrl) throw new Error('No image provided')
@@ -42,6 +44,13 @@ export function useMatting() {
           throw new Error('Chroma options are required for chroma backend')
         }
         return await removeBackgroundChroma(dataUrl, options.chroma, onProgress)
+      }
+
+      if (backend === 'chroma-anime') {
+        if (!options?.chromaAnime) {
+          throw new Error('ChromaAnime options are required for chroma-anime backend')
+        }
+        return await removeBackgroundChromaAnime(dataUrl, options.chromaAnime, onProgress)
       }
 
       if (backend === 'imgly') {

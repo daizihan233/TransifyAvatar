@@ -44,7 +44,7 @@ function stageLabel(s: string) {
 
 async function startProcess() {
   if (!uploadedImage.value) {
-    router.replace('/')
+    await router.replace('/')
     return
   }
   selected.value = true
@@ -125,11 +125,17 @@ function backHome() { router.push('/') }
                   <n-radio value="transformers">精细（RMBG-1.4）</n-radio>
                   <n-radio value="imgly">快速（IMG.LY）</n-radio>
                   <n-radio value="chroma">纯色抠图</n-radio>
+                  <n-radio value="chroma-anime">动漫图抠图</n-radio>
                 </n-radio-group>
               </template>
               <template v-else>
                 <n-tag type="primary" size="small" style="margin-left: 8px;">
-                  已选择：{{ backend === 'transformers' ? 'RMBG（Transformers）' : (backend === 'imgly' ? 'IMG.LY' : '纯色抠图') }}
+                  已选择：{{
+                    backend === 'transformers' ? 'RMBG（Transformers）' :
+                    backend === 'imgly' ? 'IMG.LY' :
+                    backend === 'chroma-anime' ? '动漫图抠图' :
+                    '纯色抠图'
+                  }}
                 </n-tag>
               </template>
             </div>
@@ -137,11 +143,13 @@ function backHome() { router.push('/') }
               <n-space v-if="!selected" align="center">
                 <n-button type="primary" :loading="running || loading" @click="startProcess">开始处理</n-button>
                 <n-button v-if="backend === 'chroma'" tertiary @click="() => router.push('/chroma')">实时预览</n-button>
+                <n-button v-if="backend === 'chroma-anime'" tertiary @click="() => router.push('/chroma-anime')">实时预览</n-button>
               </n-space>
               <n-space v-else align="center">
                 <n-button tertiary size="small" :disabled="running || loading" @click="reselectBackend">重选模型</n-button>
                 <n-button tertiary size="small" :loading="running || loading" @click="startProcess">重试当前后端</n-button>
                 <n-button v-if="backend === 'chroma'" size="small" @click="() => router.push('/chroma')">实时预览</n-button>
+                <n-button v-if="backend === 'chroma-anime'" size="small" @click="() => router.push('/chroma-anime')">实时预览</n-button>
               </n-space>
             </div>
           </n-space>
