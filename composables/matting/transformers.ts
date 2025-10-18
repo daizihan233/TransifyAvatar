@@ -20,29 +20,31 @@ export async function ensureLoaded() {
     // 动态导入，确保不会在服务端执行
     const { pipeline, env } = await import('@huggingface/transformers')
 
-    // 设置全局环境变量
-    ;(env as any).useBrowserCache = true
-    ;(env as any).allowLocalModels = false
-    ;(env as any).allowRemoteModels = true
-
-    // 🔧 关键修复：使用 jsdelivr CDN 代替本地 ONNX 运行时
+    // 🔧 完全重写后端配置，避免使用本地 onnxruntime 模块
+    // 直接从 CDN 加载所有内容
     ;(env as any).backends = {
       onnx: {
         wasm: {
           wasmPaths: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/',
-          proxy: false,
-          numThreads: 1,
         },
       },
     }
 
+    // 全局配置
+    ;(env as any).useBrowserCache = true
+    ;(env as any).allowLocalModels = false
+    ;(env as any).allowRemoteModels = true
+
+    console.log('[Transformers] WASM 配置:', (env as any).backends.onnx.wasm)
     console.log('[Transformers] 开始加载模型...')
+
     pipePromise = pipeline('image-segmentation', 'briaai/RMBG-1.4', {
       device: 'wasm',
       dtype: 'fp32',
     })
+
     initialized = true
-    console.log('[Transformers] 模型加载成功')
+    console.log('[Transformers] 模型初始化成功')
   } catch (error) {
     console.error('[Transformers] 初始化失败:', error)
     initialized = false
