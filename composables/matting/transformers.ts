@@ -7,17 +7,65 @@ let initialized = false
  * 确保模型已加载
  */
 export async function ensureLoaded() {
+  if (typeof window === 'undefined') {
+    throw new Error('Transformers.js 只能在客户端环境中运行')
+  }
+
   if (initialized && pipePromise) return
 
-  const { pipeline, env } = await import('@huggingface/transformers')
+  try {
+    console.log('[Transformers] 初始化环境配置...')
 
-  if ((env as any)?.backends?.onnx?.wasm) {
-    ;(env as any).backends.onnx.wasm.proxy = true
+    // 动态导入，确保不会在服务端执行
+    const { pipeline, env } = await import('@huggingface/transformers')
+
+    // 设置全局环境变量
+    ;(env as any).useBrowserCache = true
+    ;(env as any).allowLocalModels = false
+    ;(env as any).allowRemoteModels = true
+
+    // 配置 ONNX 后端
+    if ((env as any)?.backends?.onnx) {
+      const onnxBackend = (env as any).backends.onnx
+
+      // 配置 WASM 后端
+      if (onnxBackend.wasm) {
+        console.log('[Transformers] 配置 WASM 后端...')
+        const wasmBackend = onnxBackend.wasm
+
+        // 生产环境配置
+        wasmBackend.proxy = false
+        wasmBackend.numThreads = 1
+
+        // 设置 WASM 文件的 CDN 路径
+        const cdnUrls = [
+          'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.0/dist/',
+          'https://unpkg.com/@xenova/transformers@2.17.0/dist/',
+        ]
+
+        wasmBackend.wasmPaths = cdnUrls[0]
+        console.log('[Transformers] WASM 路径设置为:', wasmBackend.wasmPaths)
+      }
+
+      // 禁用 WebGL 后端（可能导致兼容性问题）
+      if (onnxBackend.webgl) {
+        onnxBackend.webgl.disabled = true
+      }
+    }
+
+    console.log('[Transformers] 开始加载模型...')
+    pipePromise = pipeline('image-segmentation', 'briaai/RMBG-1.4', {
+      device: 'wasm',
+      dtype: 'fp32',
+    })
+    initialized = true
+    console.log('[Transformers] 模型加载成功')
+  } catch (error) {
+    console.error('[Transformers] 初始化失败:', error)
+    initialized = false
+    pipePromise = null
+    throw new Error(`模型加载失败: ${error instanceof Error ? error.message : '未知错误'}`)
   }
-  ;(env as any).useBrowserCache = true
-
-  pipePromise = pipeline('image-segmentation', 'briaai/RMBG-1.4')
-  initialized = true
 }
 
 /**
@@ -27,6 +75,11 @@ export async function removeBackgroundTransformers(
   dataUrl: string,
   onProgress?: (stage: string, percent?: number) => void
 ): Promise<string> {
+  // 🔧 客户端检查
+  if (typeof window === 'undefined') {
+    throw new Error('此功能只能在浏览器中使用')
+  }
+
   onProgress?.('loading model', 10)
   await ensureLoaded()
   const pipe = await pipePromise!
@@ -39,7 +92,7 @@ export async function removeBackgroundTransformers(
   onProgress?.('infer', 70)
   const rawOut = await pipe(image)
 
-  const asDrawable = (src: any): { drawable: CanvasImageSource, width: number, height: number } | null => {
+  const asDrawable = (src: any): { drawable: CanvasImageSource; width: number; height: number } | null => {
     try {
       if (!src) return null
       if (typeof src?.toCanvas === 'function' && typeof src?.width === 'number' && typeof src?.height === 'number') {
@@ -190,4 +243,3 @@ export async function removeBackgroundTransformers(
   onProgress?.('done', 100)
   return resultDataUrl
 }
-

@@ -15,11 +15,21 @@ export function useMatting() {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
+  // 🔧 关键修复：只在客户端环境中预加载模型
   onMounted(async () => {
+    // 确保在客户端环境
+    if (typeof window === 'undefined') {
+      console.warn('[useMatting] 跳过服务端模型加载')
+      return
+    }
+
     try {
+      console.log('[useMatting] 客户端预加载模型...')
       await ensureLoaded()
+      console.log('[useMatting] 模型预加载完成')
     } catch (e) {
-      console.error('Failed to load matting model:', e)
+      console.error('[useMatting] 模型预加载失败:', e)
+      // 不抛出错误，让用户在实际使用时再处理
     }
   })
 
@@ -33,6 +43,12 @@ export function useMatting() {
     }
   ): Promise<string> => {
     if (!dataUrl) throw new Error('No image provided')
+
+    // 🔧 客户端检查
+    if (typeof window === 'undefined') {
+      throw new Error('背景移除功能只能在浏览器中使用')
+    }
+
     loading.value = true
     error.value = null
 
@@ -59,7 +75,9 @@ export function useMatting() {
 
       return await removeBackgroundTransformers(dataUrl, onProgress)
     } catch (e: any) {
-      error.value = e?.message || String(e)
+      const errMsg = e?.message || String(e)
+      error.value = errMsg
+      console.error('[useMatting] 背景移除失败:', errMsg)
       throw e
     } finally {
       loading.value = false
