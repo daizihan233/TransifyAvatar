@@ -7,6 +7,7 @@ let initialized = false
  * 确保模型已加载
  */
 export async function ensureLoaded() {
+  // 🔧 关键修复：确保只在客户端环境中运行
   if (typeof window === 'undefined') {
     throw new Error('Transformers.js 只能在客户端环境中运行')
   }
@@ -24,33 +25,15 @@ export async function ensureLoaded() {
     ;(env as any).allowLocalModels = false
     ;(env as any).allowRemoteModels = true
 
-    // 配置 ONNX 后端
-    if ((env as any)?.backends?.onnx) {
-      const onnxBackend = (env as any).backends.onnx
-
-      // 配置 WASM 后端
-      if (onnxBackend.wasm) {
-        console.log('[Transformers] 配置 WASM 后端...')
-        const wasmBackend = onnxBackend.wasm
-
-        // 生产环境配置
-        wasmBackend.proxy = false
-        wasmBackend.numThreads = 1
-
-        // 设置 WASM 文件的 CDN 路径
-        const cdnUrls = [
-          'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.0/dist/',
-          'https://unpkg.com/@xenova/transformers@2.17.0/dist/',
-        ]
-
-        wasmBackend.wasmPaths = cdnUrls[0]
-        console.log('[Transformers] WASM 路径设置为:', wasmBackend.wasmPaths)
-      }
-
-      // 禁用 WebGL 后端（可能导致兼容性问题）
-      if (onnxBackend.webgl) {
-        onnxBackend.webgl.disabled = true
-      }
+    // 🔧 关键修复：使用 jsdelivr CDN 代替本地 ONNX 运行时
+    ;(env as any).backends = {
+      onnx: {
+        wasm: {
+          wasmPaths: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/',
+          proxy: false,
+          numThreads: 1,
+        },
+      },
     }
 
     console.log('[Transformers] 开始加载模型...')

@@ -8,10 +8,10 @@ export default defineNuxtConfig({
     compatibilityDate: '2025-10-18',
     modules: ['nuxtjs-naive-ui'],
 
-    ssr: false,
+    ssr: true,
 
     build: {
-        transpile: ['naive-ui','vueuc']
+        transpile: ['naive-ui', 'vueuc']
     },
 
     vite: {
@@ -34,14 +34,23 @@ export default defineNuxtConfig({
             })
         ],
         optimizeDeps: {
-            exclude: ['@huggingface/transformers'],
+            exclude: ['@huggingface/transformers', 'onnxruntime-node'],
             include: []
+        },
+        resolve: {
+            alias: {
+                // 🔧 修复 onnxruntime-common 裸说明符问题
+                'onnxruntime-common': 'onnxruntime-common/dist/ort-common.min.js',
+                'onnxruntime-web': 'onnxruntime-web/dist/ort.min.js'
+            }
         },
         build: {
             rollupOptions: {
                 external: (id) => {
-                    // 排除 WASM 和 ONNX 相关文件
-                    return id.includes('.wasm') || id.includes('onnxruntime')
+                    // 排除 WASM 和 Node.js 特定模块
+                    return id.includes('.wasm') ||
+                        id.includes('onnxruntime-node') ||
+                        id.includes('sharp')
                 }
             }
         }
