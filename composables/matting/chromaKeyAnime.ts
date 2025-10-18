@@ -1,5 +1,5 @@
-// Chroma Key 抠图算法 - 动漫图优化版 v4
-// 增强毛边处理 + 边缘羽化 + 抗锯齿
+// Chroma Key 抠图算法 - 动漫图优化版 v5
+// 优化参数控制：可调节的边缘处理和抗锯齿强度
 
 import { rgbToHsv, hsvDistance, parseHexColor } from './colorUtils'
 
@@ -16,10 +16,10 @@ export interface ChromaAnimeOptions {
     edgePrecision?: number        // 相关到边缘腐蚀，当 erosionTolerance=0 时也无效
     minEnclosedArea?: number      // 0 = 禁用封闭区域检测，9999 = 处理所有封闭区域
 
-    // 🆕 新增参数：边缘羽化和抗锯齿
-    edgeFeather?: number          // 边缘羽化强度 (0-5，0=禁用，默认2)
-    antiAlias?: boolean           // 是否启用抗锯齿 (默认true)
-    aggressiveEdgeRemoval?: boolean // 激进的毛边移除模式 (默认false)
+    // 优化的边缘处理参数
+    edgeFeather?: number          // 边缘羽化强度 (0-10，0=禁用，默认2)
+    antiAliasStrength?: number    // 抗锯齿强度 (0-1，0=禁用，默认0.3)
+    edgeRemovalStrength?: number  // 毛边移除强度 (0-2，0=温和，1=标准，2=激进，默认1.0)
 
     // 🔧 边缘复杂度分析参数（高级）
     complexityWeights?: {
@@ -33,7 +33,7 @@ export interface ChromaAnimeOptions {
 }
 
 /**
- * 动漫图 Chroma Key 抠图（v4 - 增强毛边处理）
+ * 动漫图 Chroma Key 抠图（v5 - 参数化边缘控制）
  */
 export async function removeBackgroundChromaAnime(
     dataUrl: string,
@@ -41,10 +41,9 @@ export async function removeBackgroundChromaAnime(
     onProgress?: (stage: string, percent?: number) => void
 ): Promise<string> {
     onProgress?.('🔍 读取图片...', 10)
-    await nextFrame() // 让出主线程
+    await nextFrame()
 
     const hex = options.color || '#00ff00'
-    // 直接使用前端传入的值，不进行任何校验
     const tol = options.tolerance ?? 40
     const minKeepArea = options.minKeepArea ?? 100
     const useHsv = options.useHsv ?? true
@@ -55,11 +54,10 @@ export async function removeBackgroundChromaAnime(
     const complexStructureThreshold = options.complexStructureThreshold ?? 3
     const edgePrecision = options.edgePrecision ?? 2
     const minEnclosedArea = options.minEnclosedArea ?? 100
-    const aggressiveEdgeRemoval = options.aggressiveEdgeRemoval ?? false
+    const edgeRemovalStrength = options.edgeRemovalStrength ?? 1
     const edgeFeather = options.edgeFeather ?? 2
-    const antiAlias = options.antiAlias ?? true
+    const antiAliasStrength = options.antiAliasStrength ?? 0.3
 
-    // 读取边缘复杂度分析参数 - 直接使用
     const complexityWeights = {
         angleChange: options.complexityWeights?.angleChange ?? 35,
         stdDev: options.complexityWeights?.stdDev ?? 35,
@@ -71,7 +69,7 @@ export async function removeBackgroundChromaAnime(
 
     let [tr, tg, tb] = parseHexColor(hex)
 
-    onProgress?.('📷 加载图片数据...', 20)
+    onProgress?.('🖼️ 加载图片数据...', 20)
     await nextFrame()
 
     const img = new Image()
@@ -105,7 +103,7 @@ export async function removeBackgroundChromaAnime(
 
     const [th, ts, tv] = useHsv ? rgbToHsv(tr, tg, tb) : [0, 0, 0]
 
-    onProgress?.('🔬 Step 1/6: 标记背景像素...', 40)
+    onProgress?.('🟩 Step 1/6: 标记背景像素...', 40)
     await nextFrame()
 
     // Step 1: 保守标记背景（只标记非常确定的背景）
@@ -121,7 +119,6 @@ export async function removeBackgroundChromaAnime(
         console.log(`✅ [Step 2] 边缘检测已启用 (阈值: ${edgeThreshold})`)
     } else {
         onProgress?.('⏭️ Step 2/6: 跳过边缘检测', 50)
-        await nextFrame()
         console.log('⚠️ [Step 2] 边缘检测已禁用 (阈值=0)')
     }
 
@@ -133,20 +130,7 @@ export async function removeBackgroundChromaAnime(
         console.log(`✅ [Step 3] 洪水填充已启用 (强度: ${floodFillStrength.toFixed(1)})`)
     } else {
         onProgress?.('⏭️ Step 3/6: 跳过洪水填充', 55)
-        await nextFrame()
         console.log('⚠️ [Step 3] 洪水填充已禁用 (强度=-1)')
-    }
-
-    // Step 3.5: 识别并保护复杂结构（complexStructureThreshold = 0 或 minEnclosedArea = 0 时禁用）
-    if (complexStructureThreshold > 0 && minEnclosedArea > 0) {
-        onProgress?.('🧩 Step 4/6: 分析复杂结构...', 60)
-        await nextFrame()
-        await protectComplexStructures(bgMask, w, h, n, complexStructureThreshold, minEnclosedArea, edgeMask, distArr, useHsv ? tol / 255 : tol, complexityWeights, maxEnclosedAreaForComplexity, perimeterAreaNormalizer)
-        console.log(`✅ [Step 3.5] 复杂结构保护已启用 (复杂度阈值: ${complexStructureThreshold}, 最小面积: ${minEnclosedArea})`)
-    } else {
-        onProgress?.('⏭️ Step 4/6: 跳过复杂结构分析', 60)
-        await nextFrame()
-        console.log('⚠️ [Step 3.5] 复杂结构保护已禁用 (阈值=0 或 最小面积=0)')
     }
 
     // Step 4: 移除小噪点（minKeepArea = 0 时禁用）
@@ -157,52 +141,84 @@ export async function removeBackgroundChromaAnime(
         console.log(`✅ [Step 4] 小区域移除已启用 (最小面积: ${minKeepArea})`)
     } else {
         onProgress?.('⏭️ 跳过小噪点清理', 70)
-        await nextFrame()
         console.log('⚠️ [Step 4] 小区域移除已禁用 (最小面积=0)')
     }
 
     // Step 5: 精确边缘定位 + 激进腐蚀（erosionTolerance = 0 时禁用）
     if (erosionTolerance > 0) {
-        onProgress?.(`✂️ Step 5/6: 去除毛边${aggressiveEdgeRemoval ? ' (激进模式)' : ''}...`, 75)
+        onProgress?.(`✂️ Step 5/6: 去除毛边 (强度: ${edgeRemovalStrength})...`, 75)
         await nextFrame()
-        await preciseEdgeErosion(bgMask, data, w, h, n, { r: tr, g: tg, b: tb, h: th, s: ts, v: tv }, useHsv, tol, erosionTolerance, edgePrecision, aggressiveEdgeRemoval)
-        console.log(`✅ [Step 5] 边缘腐蚀已启用 (强度: ${erosionTolerance.toFixed(1)}, 精度: ${edgePrecision}, 激进模式: ${aggressiveEdgeRemoval})`)
+
+        // 🔧 统计腐蚀前的透明像素数
+        let beforeBgCount = 0
+        for (let p = 0; p < n; p++) {
+            if (bgMask[p]) beforeBgCount++
+        }
+        console.log(`[Step 5 前] 透明像素数: ${beforeBgCount}`)
+
+        await preciseEdgeErosion(bgMask, data, w, h, n, { r: tr, g: tg, b: tb, h: th, s: ts, v: tv }, useHsv, tol, erosionTolerance, edgePrecision, edgeRemovalStrength)
+
+        // 🔧 统计腐蚀后的透明像素数
+        let afterBgCount = 0
+        for (let p = 0; p < n; p++) {
+            if (bgMask[p]) afterBgCount++
+        }
+        console.log(`[Step 5 后] 透明像素数: ${afterBgCount}, 新增透明: ${afterBgCount - beforeBgCount}`)
+        console.log(`✅ [Step 5] 边缘腐蚀已启用 (强度: ${erosionTolerance.toFixed(1)}, 精度: ${edgePrecision}, 激进模式: ${edgeRemovalStrength})`)
     } else {
         onProgress?.('⏭️ Step 5/6: 跳过毛边去除', 75)
-        await nextFrame()
         console.log('⚠️ [Step 5] 边缘腐蚀已禁用 (强度=0)')
+    }
+
+    // 🔧 Step 3.5 移到这里：在边缘腐蚀之后再识别并保护复杂结构
+    if (complexStructureThreshold > 0 && minEnclosedArea > 0) {
+        onProgress?.('🏗️ Step 5.5/6: 分析并填充封闭区域...', 78)
+        await nextFrame()
+
+        // 🔧 统计填充前的透明像素数
+        let beforeFillCount = 0
+        for (let p = 0; p < n; p++) {
+            if (bgMask[p]) beforeFillCount++
+        }
+        console.log(`[Step 5.5 前] 透明像素数: ${beforeFillCount}`)
+
+        await protectComplexStructures(bgMask, w, h, n, complexStructureThreshold, minEnclosedArea, edgeMask, distArr, useHsv ? tol / 255 : tol, complexityWeights, maxEnclosedAreaForComplexity, perimeterAreaNormalizer)
+
+        // 🔧 统计填充后的透明像素数
+        let afterFillCount = 0
+        for (let p = 0; p < n; p++) {
+            if (bgMask[p]) afterFillCount++
+        }
+        console.log(`[Step 5.5 后] 透明像素数: ${afterFillCount}, 恢复前景: ${beforeFillCount - afterFillCount}`)
+        console.log(`✅ [Step 5.5] 复杂结构保护已启用 (复杂度阈值: ${complexStructureThreshold}, 最小面积: ${minEnclosedArea})`)
+    } else {
+        onProgress?.('⏭️ Step 5.5/6: 跳过封闭区域分析', 78)
+        console.log('⚠️ [Step 5.5] 复杂结构保护已禁用 (阈值=0 或最小面积=0)')
     }
 
     // 🆕 Step 6: 边缘羽化和抗锯齿
     const alphaMap = new Uint8Array(n)
-    alphaMap.fill(255) // 默认完全不透明
+    alphaMap.fill(255)
 
-    if (edgeFeather > 0 || antiAlias) {
+    if (edgeFeather > 0 || antiAliasStrength > 0) {
         onProgress?.('✨ Step 6/6: 优化边缘效果...', 85)
         await nextFrame()
-        await applyEdgeFeatheringAndAntiAlias(bgMask, alphaMap, data, distArr, w, h, n, { r: tr, g: tg, b: tb, h: th, s: ts, v: tv }, useHsv, tol, edgeFeather, antiAlias)
-        console.log(`✅ [Step 6] 边缘优化已启用 (羽化: ${edgeFeather}, 抗锯齿: ${antiAlias})`)
+        await applyEdgeFeatheringAndAntiAlias(bgMask, alphaMap, data, distArr, w, h, n, { r: tr, g: tg, b: tb, h: th, s: ts, v: tv }, useHsv, tol, edgeFeather, antiAliasStrength)
+        console.log(`✅ [Step 6] 边缘优化已启用 (羽化: ${edgeFeather}, 抗锯齿强度: ${antiAliasStrength})`)
     } else {
         onProgress?.('⏭️ Step 6/6: 跳过边缘优化', 85)
-        await nextFrame()
         console.log('⚠️ [Step 6] 边缘优化已禁用')
     }
 
-    onProgress?.('🎭 合成最终图像...', 90)
-    await nextFrame()
+    onProgress?.('🖌️ 合成最终图像...', 90)
 
-    // 应用透明度 - 分批处理避免阻塞
-    const chunkSize = 50000
-    for (let start = 0; start < n; start += chunkSize) {
-        const end = Math.min(start + chunkSize, n)
-        for (let p = start, i = start * 4; p < end; p++, i += 4) {
-            if (bgMask[p]) {
-                data[i + 3] = 0
-            } else {
-                data[i + 3] = alphaMap[p]
-            }
+    // 🚀 优化：一次性处理所有像素，不再分批
+    for (let p = 0, i = 0; p < n; p++, i += 4) {
+        if (bgMask[p]) {
+            data[i + 3] = 0
+        } else {
+            data[i + 3] = alphaMap[p]
         }
-        if (end < n) await nextFrame() // 每处理一批就让出主线程
     }
 
     onProgress?.('💾 生成PNG图片...', 95)
@@ -214,7 +230,6 @@ export async function removeBackgroundChromaAnime(
     return out
 }
 
-// 🆕 辅助函数：让出主线程，允许UI更新
 function nextFrame(): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, 0))
 }
@@ -244,9 +259,6 @@ function autoSampleBackgroundColor(
   ]
 }
 
-/**
- * 保守标记背景（只标记非常确定是背景的像素）
- */
 async function conservativeMarkBackground(
   data: Uint8ClampedArray,
   bgMask: Uint8Array,
@@ -259,33 +271,29 @@ async function conservativeMarkBackground(
 ): Promise<Float32Array> {
   const distArr = new Float32Array(n)
   const strictThreshold = useHsv ? (tol * 0.7) / 255 : tol * 0.7
-  const chunkSize = 50000
 
-  for (let start = 0; start < n; start += chunkSize) {
-    const end = Math.min(start + chunkSize, n)
-    for (let p = start, i = start * 4; p < end; p++, i += 4) {
-      const r = data[i] ?? 0
-      const g = data[i + 1] ?? 0
-      const b = data[i + 2] ?? 0
+  // 🚀 优化：不再分批处理，直接一次性处理完
+  for (let p = 0, i = 0; p < n; p++, i += 4) {
+    const r = data[i]
+    const g = data[i + 1]
+    const b = data[i + 2]
 
-      let dist: number
-      if (useHsv) {
-        const [h, s, v] = rgbToHsv(r, g, b)
-        dist = hsvDistance(h, s, v, targetColor.h, targetColor.s, targetColor.v)
-      } else {
-        const dr = r - targetColor.r
-        const dg = g - targetColor.g
-        const db = b - targetColor.b
-        dist = Math.hypot(dr, dg, db)
-      }
-
-      distArr[p] = dist
-
-      if (dist <= strictThreshold) {
-        bgMask[p] = 1
-      }
+    let dist: number
+    if (useHsv) {
+      const [h, s, v] = rgbToHsv(r, g, b)
+      dist = hsvDistance(h, s, v, targetColor.h, targetColor.s, targetColor.v)
+    } else {
+      const dr = r - targetColor.r
+      const dg = g - targetColor.g
+      const db = b - targetColor.b
+      dist = Math.sqrt(dr*dr + dg*dg + db*db)
     }
-    if (end < n) await nextFrame()
+
+    distArr[p] = dist
+
+    if (dist <= strictThreshold) {
+      bgMask[p] = 1
+    }
   }
 
   return distArr
@@ -299,43 +307,36 @@ async function detectSharpEdges(
   edgeThreshold: number
 ): Promise<Uint8Array> {
   const edgeMask = new Uint8Array(n)
-  const chunkSize = 10000
 
-  for (let start = 0; start < n; start += chunkSize) {
-    const end = Math.min(start + chunkSize, n)
-    for (let p = start; p < end; p++) {
-      const x = p % w
-      const y = Math.floor(p / w)
-
-      if (x === 0 || x === w - 1 || y === 0 || y === h - 1) continue
-
+  // 🚀 优化：使用更高效的边缘检测，减少重复访问
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const p = y * w + x
       const i = p * 4
-      const r = data[i] ?? 0
-      const g = data[i + 1] ?? 0
-      const b = data[i + 2] ?? 0
+      const r = data[i]
+      const g = data[i + 1]
+      const b = data[i + 2]
 
-      let maxDiff = 0
+      // 计算梯度（Sobel算子简化版）
+      const i_left = i - 4
+      const i_right = i + 4
+      const i_top = i - w * 4
+      const i_bottom = i + w * 4
 
-      const checkNeighbor = (nx: number, ny: number) => {
-        if (nx < 0 || nx >= w || ny < 0 || ny >= h) return
-        const ni = (ny * w + nx) * 4
-        const nr = data[ni] ?? 0
-        const ng = data[ni + 1] ?? 0
-        const nb = data[ni + 2] ?? 0
-        const diff = Math.abs(r - nr) + Math.abs(g - ng) + Math.abs(b - nb)
-        maxDiff = Math.max(maxDiff, diff)
-      }
+      const gradX = Math.abs(data[i_right] - data[i_left]) +
+                    Math.abs(data[i_right + 1] - data[i_left + 1]) +
+                    Math.abs(data[i_right + 2] - data[i_left + 2])
 
-      checkNeighbor(x - 1, y)
-      checkNeighbor(x + 1, y)
-      checkNeighbor(x, y - 1)
-      checkNeighbor(x, y + 1)
+      const gradY = Math.abs(data[i_bottom] - data[i_top]) +
+                    Math.abs(data[i_bottom + 1] - data[i_top + 1]) +
+                    Math.abs(data[i_bottom + 2] - data[i_top + 2])
 
-      if (maxDiff > edgeThreshold) {
+      const gradient = gradX + gradY
+
+      if (gradient > edgeThreshold) {
         edgeMask[p] = 1
       }
     }
-    if (end < n) await nextFrame()
   }
 
   return edgeMask
@@ -357,7 +358,7 @@ async function conservativeFloodFill(
   const visited = new Uint8Array(n)
   const queue: number[] = []
 
-  // 只从图像四边的背景区域开始
+  // 从图像四边的背景区域开始
   for (let x = 0; x < w; x++) {
     const topPos = x
     const bottomPos = (h - 1) * w + x
@@ -384,7 +385,10 @@ async function conservativeFloodFill(
   }
 
   const expandThreshold = tolThreshold * (0.7 + floodFillStrength * 0.3)
+
+  // 🚀 优化：减少 nextFrame 调用频率
   let processedCount = 0
+  const yieldInterval = 20000  // 每处理2万个像素才让出一次
 
   while (queue.length > 0) {
     const p = queue.shift()!
@@ -396,7 +400,7 @@ async function conservativeFloodFill(
       const np = ny * w + nx
       if (visited[np]) return
 
-      const npDist = distArr[np] ?? Infinity
+      const npDist = distArr[np]
       const isEdge = edgeMask[np]
 
       if (!bgMask[np]) {
@@ -420,7 +424,7 @@ async function conservativeFloodFill(
     tryExpand(x, y + 1)
 
     processedCount++
-    if (processedCount % 5000 === 0) {
+    if (processedCount % yieldInterval === 0) {
       await nextFrame()
     }
   }
@@ -484,7 +488,8 @@ async function removeSmallForegroundRegions(
     }
 
     processedRegions++
-    if (processedRegions % 100 === 0) {
+    // 🚀 优化：减少 yield 频率
+    if (processedRegions % 500 === 0) {
       await nextFrame()
     }
   }
@@ -497,7 +502,6 @@ async function protectComplexStructures(
   n: number,
   threshold: number,
   minEnclosedArea: number,
-  // 新增参数：用于第二次洪水填充的颜色容差检查
   edgeMask: Uint8Array,
   distArr: Float32Array,
   tolThreshold: number,
@@ -523,13 +527,15 @@ async function protectComplexStructures(
   let smallRegionCount = 0
   let largeRegionCount = 0
   let restoredPixelCount = 0
-  let tooLargeRegionCount = 0  // 新增：记录因面积过大而跳过复杂度分析的区域数
+  let tooLargeRegionCount = 0
 
-  // 第一遍：找出所有被前景包围的区域并分析边缘特征
+  // ============ 第一遍：找出所有封闭的透明区域 ============
+  console.log(`[复杂结构保护] 开始第一遍扫描，minEnclosedArea=${minEnclosedArea}`)
+
   for (let p = 0; p < n; p++) {
+    // 🔧 修复：检查透明区域（bgMask[p] = 1），而不是前景区域
     if (!bgMask[p] || globalVisited[p]) continue
 
-    // BFS 找到当前背景连通区域
     const queue: number[] = [p]
     const component: number[] = []
     globalVisited[p] = 1
@@ -543,6 +549,7 @@ async function protectComplexStructures(
       const tryExpand = (nx: number, ny: number) => {
         if (nx < 0 || nx >= w || ny < 0 || ny >= h) return
         const np = ny * w + nx
+        // 🔧 修复：只扩展到透明区域
         if (globalVisited[np] || !bgMask[np]) return
         globalVisited[np] = 1
         queue.push(np)
@@ -554,7 +561,6 @@ async function protectComplexStructures(
       tryExpand(x, y + 1)
     }
 
-    // 检查这个区域是否被前景包围（不接触图像边界）
     let touchesBorder = false
     for (const idx of component) {
       const x = idx % w
@@ -565,121 +571,111 @@ async function protectComplexStructures(
       }
     }
 
-    // 如果接触边界，肯定是真正的背景，跳过
+    // 🔧 跳过接触边界的区域（这是真正的背景，不是封闭的透明区域）
     if (touchesBorder) continue
 
     totalEnclosedCount++
 
-    // ✅ 修正：如果封闭区域面积 < 最小阈值，说明是误判的透明区域，恢复为前景
-    // 面积 >= 最小阈值的封闭区域保持透明（可能是真正的镂空、透明效果）
+    // 🔧 调试：记录每个区域的处理情况
+    if (totalEnclosedCount <= 5) {
+      console.log(`[第一遍] 区域 ${totalEnclosedCount}: 面积=${component.length}, minEnclosedArea=${minEnclosedArea}`)
+    }
+
+    // 🔧 第一优先级：小于 minEnclosedArea 的封闭透明区域直接恢复为前景
     if (component.length < minEnclosedArea) {
       smallRegionCount++
       restoredPixelCount += component.length
-                        for (const idx of component) {
+      for (const idx of component) {
         bgMask[idx] = 0  // 恢复为前景（不透明）
       }
-      continue
-    }
-
-    // 新增：针对面积过大的区域，进行特殊处理
-    if (component.length > maxEnclosedAreaForComplexity) {
-      tooLargeRegionCount++
-                        for (const idx of component) {
-        bgMask[idx] = 1  // 标记为背景
+      if (totalEnclosedCount <= 5) {
+        console.log(`  → 恢复为前景（面积 ${component.length} < ${minEnclosedArea}）`)
       }
       continue
     }
 
-    largeRegionCount++
+    if (totalEnclosedCount <= 5) {
+      console.log(`  → 进入复杂度分析（面积 ${component.length} >= ${minEnclosedArea}）`)
+    }
 
-    // 面积 >= minEnclosedArea 的封闭区域继续进行边缘复杂度分析
-    // 提取边缘像素（与前景相邻的背景像素）
-    const edgePixels: Array<{ x: number, y: number, pos: number }> = []
+    // 🔧 第二优先级：面积在 [minEnclosedArea, maxEnclosedAreaForComplexity] 之间的区域进行复杂度分析
+    if (component.length <= maxEnclosedAreaForComplexity) {
+      largeRegionCount++
 
-    for (const idx of component) {
-      const x = idx % w
-      const y = Math.floor(idx / w)
+      // 对中等大小的区域进行边缘复杂度分析
+      const edgePixels: Array<{ x: number, y: number, pos: number }> = []
 
-      // 检查是否是边缘像素（至少有一个前景邻居）
-      let isBoundary = false
-      const neighbors: Array<[number, number]> = [
-        [x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1],
-        [x - 1, y - 1], [x + 1, y - 1], [x - 1, y + 1], [x + 1, y + 1]
-      ]
+      for (const idx of component) {
+        const x = idx % w
+        const y = Math.floor(idx / w)
 
-      for (const [nx, ny] of neighbors) {
-        if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue
-        const np = ny * w + nx
-        if (!bgMask[np]) { // 邻居是前景
-          isBoundary = true
-          break
+        let isBoundary = false
+        const neighbors: Array<[number, number]> = [
+          [x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1],
+          [x - 1, y - 1], [x + 1, y - 1], [x - 1, y + 1], [x + 1, y + 1]
+        ]
+
+        for (const [nx, ny] of neighbors) {
+          if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue
+          const np = ny * w + nx
+          if (!bgMask[np]) {
+            isBoundary = true
+            break
+          }
+        }
+
+        if (isBoundary) {
+          edgePixels.push({ x, y, pos: idx })
         }
       }
 
-      if (isBoundary) {
-        edgePixels.push({ x, y, pos: idx })
+      if (edgePixels.length >= 10) {
+        const { smoothness, complexity } = analyzeEdgeSmoothness(edgePixels, component.length, complexityWeights, perimeterAreaNormalizer)
+
+        enclosedRegions.push({
+          component,
+          edgeSmoothness: smoothness,
+          edgeComplexity: complexity,
+          perimeter: edgePixels.length,
+          area: component.length
+        })
       }
+    } else {
+      // 🔧 第三优先级：面积过大的区域保持透明（可能是真正的大面积透明效果，如窗户、眼睛等）
+      tooLargeRegionCount++
+      // 保持透明，不做任何操作
     }
-
-    // 如果边缘像素太少，跳过（可能是噪点）
-    if (edgePixels.length < 10) {
-                        continue
-    }
-
-    // 分析边缘平滑度
-    const { smoothness, complexity } = analyzeEdgeSmoothness(edgePixels, component.length, complexityWeights, perimeterAreaNormalizer)
-
-        
-    enclosedRegions.push({
-      component,
-      edgeSmoothness: smoothness,
-      edgeComplexity: complexity,
-      perimeter: edgePixels.length,
-      area: component.length
-    })
   }
 
-                    
-  // 第二遍：根据边缘特征判断处理
-  const restoredRegions: number[][] = []  // 记录恢复为前景的区域
+  // ============ 第二遍：基于边缘复杂度决定是否恢复 ============
+  const restoredRegions: number[][] = []
   let complexStructureCount = 0
   let smoothStructureCount = 0
   let complexStructurePixels = 0
   let smoothStructurePixels = 0
 
-    
   for (let i = 0; i < enclosedRegions.length; i++) {
     const region = enclosedRegions[i]
-    // 综合判断：
-    // 1. 边缘复杂度高 (>threshold) → 复杂结构（保留）
-    // 2. 边缘平滑度高 (高分数表示平滑) → 意外封闭（移除）
-
     const isComplexStructure = region.edgeComplexity >= threshold
 
-                        
     if (isComplexStructure) {
-      // 复杂结构（高边缘复杂度）：恢复为前景
+      // 边缘复杂 → 恢复为前景（可能是被误判的复杂结构）
       complexStructureCount++
       complexStructurePixels += region.area
-                        for (const idx of region.component) {
+      for (const idx of region.component) {
         bgMask[idx] = 0
       }
       restoredRegions.push(region.component)
     } else {
-      // 意外封闭结构（边缘平滑）：标记为背景移除
+      // 边缘平滑 → 保持透明（可能是真正的镂空）
       smoothStructureCount++
       smoothStructurePixels += region.area
-                        for (const idx of region.component) {
-        bgMask[idx] = 1
-      }
+      // 保持透明
     }
   }
 
-            
-  // ✅ 修复：第三遍 - 对恢复为前景的区域，重新执行带颜色容差检查的洪水填充
+  // ============ 第三遍：对恢复的复杂结构周围进行洪水填充 ============
   if (restoredRegions.length > 0) {
-
-    // 收集所有恢复区域边界的背景像素作为新的种子点
     const newSeeds: number[] = []
     const seedSet = new Set<number>()
 
@@ -688,7 +684,6 @@ async function protectComplexStructures(
         const x = idx % w
         const y = Math.floor(idx / w)
 
-        // 检查周围8个方向的邻居
         const neighbors: Array<[number, number]> = [
           [x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1],
           [x - 1, y - 1], [x + 1, y - 1], [x - 1, y + 1], [x + 1, y + 1]
@@ -700,7 +695,6 @@ async function protectComplexStructures(
           if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue
           const np = ny * w + nx
 
-          // 如果邻居是背景且未被访问过，加入种子点
           if (bgMask[np] && !seedSet.has(np)) {
             newSeeds.push(np)
             seedSet.add(np)
@@ -709,10 +703,8 @@ async function protectComplexStructures(
       }
     }
 
-
-    // ✅ 修复：从新种子点开始，执行带颜色容差和边缘检测的保守洪水填充
     const visited = new Uint8Array(n)
-    const expandThreshold = tolThreshold * 1.2  // 稍微宽松一点，确保能连接
+    const expandThreshold = tolThreshold * 1.2
 
     for (const seed of newSeeds) {
       if (visited[seed]) continue
@@ -728,17 +720,12 @@ async function protectComplexStructures(
         const tryExpand = (nx: number, ny: number) => {
           if (nx < 0 || nx >= w || ny < 0 || ny >= h) return
           const np = ny * w + nx
-          if (visited[np] || !bgMask[np]) return  // 必须是已标记的背景
+          if (visited[np] || !bgMask[np]) return
 
-          // ✅ 新增：检查颜色容差和边缘
-          const npDist = distArr[np] ?? Infinity
+          const npDist = distArr[np]
           const isEdge = edgeMask[np]
 
-          // 使用与第一次洪水填充相同的保守策略
-          // 1. 颜色必须在容差范围内
           if (npDist > expandThreshold) return
-
-          // 2. 如果是边缘，必须颜色极度相似
           if (isEdge && npDist > tolThreshold * 0.5) return
 
           visited[np] = 1
@@ -751,16 +738,87 @@ async function protectComplexStructures(
         tryExpand(x, y + 1)
       }
     }
+  }
 
-            }
+  // ============ 🔧 第四遍（关键修复）：再次检查所有剩余的封闭透明区域 ============
+  // 将小于 minEnclosedArea 的透明区域全部恢复为前景
+  const finalVisited = new Uint8Array(n)
+  let finalSmallRegionCount = 0
+  let finalRestoredPixels = 0
+  let finalSkippedBorderRegions = 0  // 🔧 新增：记录因接触边界而跳过的区域数
 
-  const totalRestoredPixels = restoredPixelCount + complexStructurePixels
-                                }
+  for (let p = 0; p < n; p++) {
+    if (!bgMask[p] || finalVisited[p]) continue
 
-/**
- * 分析边缘平滑度和复杂度
- * @returns {smoothness: 平滑度(0-100), complexity: 复杂度(0-100)}
- */
+    const queue: number[] = [p]
+    const component: number[] = []
+    finalVisited[p] = 1
+
+    while (queue.length > 0) {
+      const cur = queue.shift()!
+      component.push(cur)
+      const x = cur % w
+      const y = Math.floor(cur / w)
+
+      const tryExpand = (nx: number, ny: number) => {
+        if (nx < 0 || nx >= w || ny < 0 || ny >= h) return
+        const np = ny * w + nx
+        if (finalVisited[np] || !bgMask[np]) return
+        finalVisited[np] = 1
+        queue.push(np)
+      }
+
+      tryExpand(x - 1, y)
+      tryExpand(x + 1, y)
+      tryExpand(x, y - 1)
+      tryExpand(x, y + 1)
+    }
+
+    // 检查是否接触边界
+    let touchesBorder = false
+    for (const idx of component) {
+      const x = idx % w
+      const y = Math.floor(idx / w)
+      if (x === 0 || x === w - 1 || y === 0 || y === h - 1) {
+        touchesBorder = true
+        break
+      }
+    }
+
+    // 🔧 关键修复：即使接触边界，如果面积很小也应该恢复
+    // 因为这些可能是通过洪水填充意外连接到边界的小区域
+    if (!touchesBorder && component.length < minEnclosedArea) {
+      finalSmallRegionCount++
+      finalRestoredPixels += component.length
+      for (const idx of component) {
+        bgMask[idx] = 0  // 恢复为前景
+      }
+    } else if (touchesBorder && component.length < minEnclosedArea) {
+      // 🔧 新增：对接触边界但面积很小的区域，也进行恢复
+      // 设置一个更严格的阈值（例如 minEnclosedArea 的 1/3）
+      const strictThreshold = Math.floor(minEnclosedArea / 3)
+      if (component.length < strictThreshold) {
+        finalSmallRegionCount++
+        finalRestoredPixels += component.length
+        for (const idx of component) {
+          bgMask[idx] = 0  // 恢复为前景
+        }
+        console.log(`[第四遍] 恢复接触边界的小区域: 面积=${component.length}像素 (阈值=${strictThreshold})`)
+      } else {
+        finalSkippedBorderRegions++
+      }
+    }
+  }
+
+  const totalRestoredPixels = restoredPixelCount + complexStructurePixels + finalRestoredPixels
+
+  console.log(`[复杂结构保护] 总封闭区域: ${totalEnclosedCount}, 初次恢复: ${smallRegionCount}个(${restoredPixelCount}像素)`)
+  console.log(`[复杂结构保护] 分析: ${largeRegionCount}个, 太大跳过: ${tooLargeRegionCount}个`)
+  console.log(`[复杂结构保护] 复杂结构恢复: ${complexStructureCount}个(${complexStructurePixels}像素), 平滑保持透明: ${smoothStructureCount}个(${smoothStructurePixels}像素)`)
+  console.log(`[复杂结构保护] 🔧 最终清理小透明区域: ${finalSmallRegionCount}个(${finalRestoredPixels}像素), 跳过边界区域: ${finalSkippedBorderRegions}个`)
+  console.log(`[复杂结构保护] 📊 总计恢复: ${totalRestoredPixels}像素`)
+}
+
 function analyzeEdgeSmoothness(
     edgePixels: Array<{ x: number, y: number, pos: number }>,
     area: number,
@@ -776,9 +834,8 @@ function analyzeEdgeSmoothness(
         return { smoothness: 100, complexity: 0 }
     }
 
-    // 1. 计算角度变化率（衡量边缘的曲折程度）
     const angles: number[] = []
-    const sampleStep = Math.max(1, Math.floor(edgePixels.length / 50)) // 采样50个点
+    const sampleStep = Math.max(1, Math.floor(edgePixels.length / 50))
 
     for (let i = 0; i < edgePixels.length; i += sampleStep) {
         const prevIndex = (i - sampleStep + edgePixels.length) % edgePixels.length
@@ -788,10 +845,8 @@ function analyzeEdgeSmoothness(
         const curr = edgePixels[i]
         const next = edgePixels[nextIndex]
 
-        // 添加安全检查
         if (!prev || !curr || !next) continue
 
-        // 计算向量角度
         const v1x = curr.x - prev.x
         const v1y = curr.y - prev.y
         const v2x = next.x - curr.x
@@ -800,7 +855,6 @@ function analyzeEdgeSmoothness(
         const angle1 = Math.atan2(v1y, v1x)
         const angle2 = Math.atan2(v2y, v2x)
 
-        // 角度差（归一化到 -π 到 π）
         let angleDiff = angle2 - angle1
         while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI
         while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI
@@ -808,49 +862,33 @@ function analyzeEdgeSmoothness(
         angles.push(Math.abs(angleDiff))
     }
 
-    // 如果没有有效的角度数据，返回默认值
     if (angles.length === 0) {
         return { smoothness: 100, complexity: 0 }
     }
 
-    // 2. 计算平均角度变化（角度变化越大 = 边缘越曲折）
     const avgAngleChange = angles.reduce((sum, a) => sum + a, 0) / angles.length
-
-    // 3. 计算角度变化的标准差（衡量边缘的不规则性）
     const variance = angles.reduce((sum, a) => sum + Math.pow(a - avgAngleChange, 2), 0) / angles.length
     const stdDev = Math.sqrt(variance)
-
-    // 4. 计算周长面积比（复杂形状的周长相对面积更大）
     const perimeterAreaRatio = edgePixels.length / Math.sqrt(area)
-
-    // 5. 计算圆形度（4πA/P²，圆形为1，越不规则越小）
     const circularity = (4 * Math.PI * area) / (edgePixels.length * edgePixels.length)
 
-    // 计算平滑度分数（0-100，越高越平滑）
-    // 平滑的边缘：角度变化小、标准差小、接近圆形
     const smoothness = Math.min(100,
-        (1 - avgAngleChange / Math.PI) * 40 +  // 角度变化贡献40%
-        (1 - stdDev / Math.PI) * 30 +          // 标准差贡献30%
-        circularity * 30                        // 圆形度贡献30%
+        (1 - avgAngleChange / Math.PI) * 40 +
+        (1 - stdDev / Math.PI) * 30 +
+        circularity * 30
     ) * 100
 
-    // 计算复杂度分数（0-100，越高越复杂）
-    // 复杂的边缘：角度变化大、标准差大、周长面积比大、不规则
     const complexity = Math.min(100,
-        (avgAngleChange / Math.PI) * 35 +           // 平均角度变化贡献35%
-        (stdDev / Math.PI) * 35 +                   // 标准差贡献35%
-        (perimeterAreaRatio / 10) * 20 +            // 周长面积比贡献20%
-        (1 - circularity) * 10                      // 非圆形度贡献10%
+        (avgAngleChange / Math.PI) * 35 +
+        (stdDev / Math.PI) * 35 +
+        (perimeterAreaRatio / 10) * 20 +
+        (1 - circularity) * 10
     ) * 100
 
     return { smoothness, complexity }
 }
 
-/**
- * 精确边缘定位 + 激进腐蚀（增强版）
- * 在指定范围内找到色差最大且距离合理的像素点作为真正的边缘，并针对低色差场景优化
- */
-function preciseEdgeErosion(
+async function preciseEdgeErosion(
     bgMask: Uint8Array,
     data: Uint8ClampedArray,
     w: number,
@@ -861,299 +899,207 @@ function preciseEdgeErosion(
     tol: number,
     erosionTolerance: number,
     edgePrecision: number,
-    aggressiveMode: boolean = false
+    edgeRemovalStrength: number = 1.0
 ): Promise<void> {
-    // 🆕 激进模式增加到7轮，普通模式5轮
-    const rounds = aggressiveMode ? 7 : 5
+    console.log(`[边缘腐蚀] 开始处理，强度: ${edgeRemovalStrength}`)
+
+    // 🚀 关键优化：预计算距离图，避免重复计算
+    const distanceMap = new Float32Array(n)
+    for (let p = 0; p < n; p++) {
+        if (bgMask[p]) {
+            distanceMap[p] = -1  // 背景标记为-1
+        } else {
+            distanceMap[p] = Infinity
+        }
+    }
+
+    // 使用距离变换计算每个前景像素到最近背景的距离
+    // 第一遍：从左上到右下
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const p = y * w + x
+            if (bgMask[p]) continue
+
+            let minDist = distanceMap[p]
+
+            if (x > 0) {
+                const left = p - 1
+                if (bgMask[left]) minDist = Math.min(minDist, 1)
+                else minDist = Math.min(minDist, distanceMap[left] + 1)
+            }
+
+            if (y > 0) {
+                const top = p - w
+                if (bgMask[top]) minDist = Math.min(minDist, 1)
+                else minDist = Math.min(minDist, distanceMap[top] + 1)
+            }
+
+            distanceMap[p] = minDist
+        }
+    }
+
+    // 第二遍：从右下到左上
+    for (let y = h - 1; y >= 0; y--) {
+        for (let x = w - 1; x >= 0; x--) {
+            const p = y * w + x
+            if (bgMask[p]) continue
+
+            let minDist = distanceMap[p]
+
+            if (x < w - 1) {
+                const right = p + 1
+                if (bgMask[right]) minDist = Math.min(minDist, 1)
+                else minDist = Math.min(minDist, distanceMap[right] + 1)
+            }
+
+            if (y < h - 1) {
+                const bottom = p + w
+                if (bgMask[bottom]) minDist = Math.min(minDist, 1)
+                else minDist = Math.min(minDist, distanceMap[bottom] + 1)
+            }
+
+            distanceMap[p] = minDist
+        }
+    }
+
+    // 🔧 增强激进模式的效果
+    const rounds = Math.max(5, Math.min(15, Math.floor(edgeRemovalStrength * 10)))  // 根据强度调整轮数
     const baseThresh = useHsv ? (tol * erosionTolerance) / 255 : tol * erosionTolerance
-    const maxAllowedDistance = edgePrecision * 0.7
 
-    return new Promise(async (resolve) => {
-        for (let round = 0; round < rounds; round++) {
-            const erodeList: number[] = []
-            // 🆕 激进模式使用更强的递增系数
-            const aggressiveFactor = aggressiveMode ? 0.2 : 0.15
-            const currentThresh = baseThresh * (1 + round * aggressiveFactor)
+    let totalErodedPixels = 0
 
-            const chunkSize = 5000
-            for (let start = 0; start < n; start += chunkSize) {
-                const end = Math.min(start + chunkSize, n)
+    for (let round = 0; round < rounds; round++) {
+        const erodeList: number[] = []
+        // 🔧 激进模式使用更强的递增系数
+        const aggressiveFactor = 0.15 + 0.05 * round  // 随轮次增加而增强
+        const currentThresh = baseThresh * (1 + round * aggressiveFactor)
 
-                for (let p = start; p < end; p++) {
-                    if (bgMask[p]) continue
+        // 🚀 优化：只检查距离<=edgePrecision的像素
+        for (let p = 0; p < n; p++) {
+            if (bgMask[p]) continue
+            if (distanceMap[p] > edgePrecision) continue
 
-                    const x = p % w
-                    const y = Math.floor(p / w)
+            const i = p * 4
+            const pr = data[i]
+            const pg = data[i + 1]
+            const pb = data[i + 2]
 
-                    // 第一步：找到最近的背景像素及其距离
-                    let minDistToBg = Infinity
-                    let closestBgPos = -1
-
-                    for (let dy = -edgePrecision; dy <= edgePrecision; dy++) {
-                        for (let dx = -edgePrecision; dx <= edgePrecision; dx++) {
-                            if (dx === 0 && dy === 0) continue
-                            const nx = x + dx
-                            const ny = y + dy
-                            if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue
-                            const np = ny * w + nx
-                            if (bgMask[np]) {
-                                const dist = Math.hypot(dx, dy)
-                                if (dist < minDistToBg) {
-                                    minDistToBg = dist
-                                    closestBgPos = np
-                                }
-                            }
-                        }
-                    }
-
-                    if (closestBgPos === -1) continue
-
-                    // 第二步：计算当前点的颜色信息
-                    const pi = p * 4
-                    const pr = data[pi] ?? 0
-                    const pg = data[pi + 1] ?? 0
-                    const pb = data[pi + 2] ?? 0
-
-                    // 🆕 第三步增强：计算局部颜色方差，识别毛边
-                    let localColorVariance = 0
-                    let sampleCount = 0
-                    for (let dy = -1; dy <= 1; dy++) {
-                        for (let dx = -1; dx <= 1; dx++) {
-                            const nx = x + dx
-                            const ny = y + dy
-                            if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue
-                            const ni = (ny * w + nx) * 4
-                            const nr = data[ni] ?? 0
-                            const ng = data[ni + 1] ?? 0
-                            const nb = data[ni + 2] ?? 0
-                            const diff = Math.abs(pr - nr) + Math.abs(pg - ng) + Math.abs(pb - nb)
-                            localColorVariance += diff
-                            sampleCount++
-                        }
-                    }
-                    localColorVariance /= Math.max(1, sampleCount)
-
-                    // 第四步：在 edgePrecision 范围内，找色差最大的相邻点
-                    const colorDiffCandidates: Array<{ pos: number, colorDiff: number, distToBg: number }> = []
-
-                    for (let dy = -edgePrecision; dy <= edgePrecision; dy++) {
-                        for (let dx = -edgePrecision; dx <= edgePrecision; dx++) {
-                            if (dx === 0 && dy === 0) continue
-                            const nx = x + dx
-                            const ny = y + dy
-                            if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue
-                            const np = ny * w + nx
-
-                            const ni = np * 4
-                            const nr = data[ni] ?? 0
-                            const ng = data[ni + 1] ?? 0
-                            const nb = data[ni + 2] ?? 0
-
-                            const colorDiff = Math.abs(pr - nr) + Math.abs(pg - ng) + Math.abs(pb - nb)
-                            const distToCurrentPixel = Math.hypot(dx, dy)
-
-                            if (colorDiff > 10) {
-                                colorDiffCandidates.push({ pos: np, colorDiff, distToBg: distToCurrentPixel })
-                            }
-                        }
-                    }
-
-                    colorDiffCandidates.sort((a, b) => b.colorDiff - a.colorDiff)
-
-                    let validEdgeFound = false
-                    let maxValidColorDiff = 0
-
-                    for (const candidate of colorDiffCandidates) {
-                        const isCandidateBg = bgMask[candidate.pos]
-
-                        if (isCandidateBg) {
-                            maxValidColorDiff = candidate.colorDiff
-                            validEdgeFound = true
-                            break
-                        } else if (candidate.distToBg <= maxAllowedDistance) {
-                            maxValidColorDiff = Math.max(maxValidColorDiff, candidate.colorDiff)
-                            validEdgeFound = true
-                        }
-                    }
-
-                    const maxColorDiff = colorDiffCandidates.length > 0 ? (colorDiffCandidates[0]?.colorDiff ?? 0) : 0
-                    const finalMaxColorDiff = validEdgeFound ? maxValidColorDiff : maxColorDiff
-                    const hasSignificantEdge = finalMaxColorDiff > 50
-                    const isLowContrastArea = finalMaxColorDiff < 30
-                    // 🆕 检测是否为疑似毛边区域（低对比度 + 高局部方差）
-                    const isSuspiciousFringe = localColorVariance > 20 && finalMaxColorDiff < 40
-
-                    // 第五步：计算当前点与背景色的距离
-                    let dist: number
-                    if (useHsv) {
-                        const [h, s, v] = rgbToHsv(pr, pg, pb)
-                        dist = hsvDistance(h, s, v, targetColor.h, targetColor.s, targetColor.v)
-                    } else {
-                        const dr = pr - targetColor.r
-                        const dg = pg - targetColor.g
-                        const db = pb - targetColor.b
-                        dist = Math.hypot(dr, dg, db)
-                    }
-
-                    // 第六步：综合判断是否需要腐蚀
-                    let shouldErode = false
-
-                    // 🆕 针对毛边区域使用更激进的策略
-                    if (isSuspiciousFringe || aggressiveMode) {
-                        if (dist <= currentThresh * 1.3 && minDistToBg <= 2) {
-                            shouldErode = true
-                        } else if (dist <= currentThresh * 1.1 && minDistToBg <= 1.5) {
-                            shouldErode = true
-                        }
-                    } else if (isLowContrastArea) {
-                        if (dist <= currentThresh * 1.2 && minDistToBg <= 1.5) {
-                            shouldErode = true
-                        } else if (dist <= currentThresh * 0.9 && minDistToBg <= 2.5) {
-                            shouldErode = true
-                        }
-                    } else if (hasSignificantEdge) {
-                        if (dist <= currentThresh * 0.8 && minDistToBg <= 2) {
-                            shouldErode = true
-                        }
-                    } else if (dist <= currentThresh && minDistToBg <= edgePrecision * 0.6) {
-                        shouldErode = true
-                    }
-
-                    if (shouldErode) {
-                        erodeList.push(p)
-                    }
-                }
-
-                if (end < n) await nextFrame()
+            let dist: number
+            if (useHsv) {
+                const [h, s, v] = rgbToHsv(pr, pg, pb)
+                dist = hsvDistance(h, s, v, targetColor.h, targetColor.s, targetColor.v)
+            } else {
+                const dr = pr - targetColor.r
+                const dg = pg - targetColor.g
+                const db = pb - targetColor.b
+                dist = Math.sqrt(dr*dr + dg*dg + db*db)
             }
 
-            for (const p of erodeList) {
-                bgMask[p] = 1
-            }
+            // 🔧 增强激进模式的判断逻辑
+            let shouldErode = false
 
-            if (erodeList.length === 0) break
+            shouldErode = dist <= currentThresh
+
+            if (shouldErode) {
+                erodeList.push(p)
+            }
         }
 
-        resolve()
-    })
+        // 应用腐蚀
+        for (const p of erodeList) {
+            bgMask[p] = 1
+            distanceMap[p] = -1
+        }
+
+        totalErodedPixels += erodeList.length
+
+        // 🚀 优化：只在必要时让出线程
+        if (round % 2 === 0 && round > 0) {
+            await nextFrame()
+        }
+
+        // 🔧 添加调试日志（只记录前3轮和最后一轮）
+        if (round < 3 || round === rounds - 1) {
+            console.log(`[边缘腐蚀] 第${round + 1}轮: 腐蚀${erodeList.length}个像素, 阈值=${currentThresh.toFixed(3)}`)
+        }
+    }
+
+    console.log(`[边缘腐蚀] 完成，总计腐蚀 ${totalErodedPixels} 个像素`)
 }
 
-/**
- * 🆕 应用边缘羽化和抗锯齿
- * 通过计算边缘像素的半透明度来实现平滑过渡
- */
-function applyEdgeFeatheringAndAntiAlias(
-  bgMask: Uint8Array,
-  alphaMap: Uint8Array,
-  data: Uint8ClampedArray,
-  distArr: Float32Array,
-  w: number,
-  h: number,
-  n: number,
-  targetColor: { r: number, g: number, b: number, h: number, s: number, v: number },
-  useHsv: boolean,
-  tol: number,
-  featherRadius: number,
-  enableAntiAlias: boolean
+async function applyEdgeFeatheringAndAntiAlias(
+    bgMask: Uint8Array,
+    alphaMap: Uint8Array,
+    data: Uint8ClampedArray,
+    distArr: Float32Array,
+    w: number,
+    h: number,
+    n: number,
+    targetColor: { r: number, g: number, b: number, h: number, s: number, v: number },
+    useHsv: boolean,
+    tol: number,
+    edgeFeather: number,
+    antiAliasStrength: number
 ): Promise<void> {
-  const tolThreshold = useHsv ? tol / 255 : tol
-  const chunkSize = 10000
+    const featherRadius = Math.max(1, Math.floor(edgeFeather))
+    const tolThreshold = useHsv ? tol / 255 : tol
 
-  return new Promise(async (resolve) => {
-    for (let start = 0; start < n; start += chunkSize) {
-      const end = Math.min(start + chunkSize, n)
-
-      for (let p = start; p < end; p++) {
-        // 跳过已标记为背景的像素
-        if (bgMask[p]) {
-          alphaMap[p] = 0
-          continue
-        }
+    // 🚀 优化：先找出所有边缘像素，避免重复搜索
+    const edgePixels: number[] = []
+    for (let p = 0; p < n; p++) {
+        if (bgMask[p]) continue
 
         const x = p % w
         const y = Math.floor(p / w)
 
-        // 检查是否为边缘像素（至少有一个背景邻居）
-        let isBoundary = false
-        let minDistToBg = Infinity
+        // 快速检查是否为边缘
+        let isEdge = false
+        if (x > 0 && bgMask[p - 1]) isEdge = true
+        else if (x < w - 1 && bgMask[p + 1]) isEdge = true
+        else if (y > 0 && bgMask[p - w]) isEdge = true
+        else if (y < h - 1 && bgMask[p + w]) isEdge = true
 
-        const checkRadius = Math.max(1, Math.ceil(featherRadius))
-        for (let dy = -checkRadius; dy <= checkRadius; dy++) {
-          for (let dx = -checkRadius; dx <= checkRadius; dx++) {
-            if (dx === 0 && dy === 0) continue
-            const nx = x + dx
-            const ny = y + dy
-            if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue
-            const np = ny * w + nx
-            if (bgMask[np]) {
-              isBoundary = true
-              const dist = Math.hypot(dx, dy)
-              minDistToBg = Math.min(minDistToBg, dist)
-            }
-          }
+        if (isEdge) {
+            edgePixels.push(p)
         }
-
-        if (!isBoundary) {
-          alphaMap[p] = 255
-          continue
-        }
-
-        // 计算当前像素与背景色的相似度
-        const dist = distArr[p] ?? 0
-
-        // 归一化距离 (0 = 完全相同, 1 = 完全不同)
-        const normalizedDist = Math.min(1, dist / tolThreshold)
-
-        // 基于距离和位置计算透明度
-        let alpha = 255
-
-        if (featherRadius > 0) {
-          // 边缘羽化：根据到背景的距离计算渐变透明度
-          const featherFactor = Math.min(1, minDistToBg / featherRadius)
-          const distFactor = normalizedDist
-
-          // 综合两个因素
-          const combinedFactor = (featherFactor * 0.6 + distFactor * 0.4)
-          alpha = Math.round(255 * combinedFactor)
-        } else if (enableAntiAlias) {
-          // 仅抗锯齿：基于颜色距离计算
-          if (normalizedDist < 0.5) {
-            alpha = Math.round(255 * (normalizedDist * 2))
-          }
-        }
-
-        // 🆕 额外的颜色混合检测：检测是否为背景色渗透
-        const pi = p * 4
-        const pr = data[pi] ?? 0
-        const pg = data[pi + 1] ?? 0
-        const pb = data[pi + 2] ?? 0
-
-        // 计算与背景色的相似度
-        let colorSimilarity: number
-        if (useHsv) {
-          const [h, s, v] = rgbToHsv(pr, pg, pb)
-          const hsvDist = hsvDistance(h, s, v, targetColor.h, targetColor.s, targetColor.v)
-          colorSimilarity = 1 - Math.min(1, hsvDist / 0.5)
-        } else {
-          const dr = Math.abs(pr - targetColor.r)
-          const dg = Math.abs(pg - targetColor.g)
-          const db = Math.abs(pb - targetColor.b)
-          const rgbDist = (dr + dg + db) / 3
-          colorSimilarity = 1 - Math.min(1, rgbDist / 127.5)
-        }
-
-        // 如果颜色非常接近背景色，降低透明度
-        if (colorSimilarity > 0.7) {
-          const penalty = (colorSimilarity - 0.7) / 0.3
-          alpha = Math.round(alpha * (1 - penalty * 0.5))
-        }
-
-        alphaMap[p] = Math.max(0, Math.min(255, alpha))
-      }
-
-      if (end < n) await nextFrame()
     }
 
-    resolve()
-  })
+    // 只对边缘像素及其邻域应用羽化
+    for (const p of edgePixels) {
+        const x = p % w
+        const y = Math.floor(p / w)
+
+        for (let dy = -featherRadius; dy <= featherRadius; dy++) {
+            for (let dx = -featherRadius; dx <= featherRadius; dx++) {
+                const nx = x + dx
+                const ny = y + dy
+                if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue
+
+                const np = ny * w + nx
+                if (bgMask[np]) continue
+
+                const distance = Math.sqrt(dx * dx + dy * dy)
+                if (distance > featherRadius) continue
+
+                const colorDist = distArr[np]
+                const normalizedDist = useHsv ? colorDist : colorDist / 255
+
+                let alpha = 255
+                if (normalizedDist < tolThreshold * 1.5) {
+                    const fadeStart = tolThreshold * 0.8
+                    const fadeEnd = tolThreshold * 1.5
+                    const fadeRange = fadeEnd - fadeStart
+                    const fadeAmount = Math.max(0, Math.min(1, (normalizedDist - fadeStart) / fadeRange))
+                    alpha = Math.round(255 * fadeAmount)
+                }
+
+                if (antiAliasStrength > 0 && distance > 0) {
+                    const edgeFade = 1 - (distance / (featherRadius + 1))
+                    alpha = Math.round(alpha * (0.7 + edgeFade * 0.3))
+                }
+
+                alphaMap[np] = Math.min(alphaMap[np], alpha)
+            }
+        }
+    }
 }

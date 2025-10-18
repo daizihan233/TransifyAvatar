@@ -23,9 +23,9 @@ const chromaAnime = reactive({
   edgePrecision: 200,
   minEnclosedArea: 240,
   edgeFeather: 0,
-  antiAlias: true,
-  aggressiveEdgeRemoval: true,
-  // 🎯 高级参数：复杂度分析权重
+  antiAliasStrength: 0.3,  // 改为强度参数（0-1）
+  edgeRemovalStrength: 1.0, // 改为强度参数（0-2）
+  // 🔧 高级参数：复杂度分析权重
   complexityWeights: {
     angleChange: 35,
     stdDev: 35,
@@ -78,8 +78,8 @@ function debounceRun(ms = 200) {
           minEnclosedArea: chromaAnime.minEnclosedArea,
           // 🆕 传递新的边缘优化参数
           edgeFeather: chromaAnime.edgeFeather,
-          antiAlias: chromaAnime.antiAlias,
-          aggressiveEdgeRemoval: chromaAnime.aggressiveEdgeRemoval,
+          antiAliasStrength: chromaAnime.antiAliasStrength,
+          edgeRemovalStrength: chromaAnime.edgeRemovalStrength,
           // 🎯 传递高级参数
           complexityWeights: {
             angleChange: chromaAnime.complexityWeights.angleChange,
@@ -226,8 +226,8 @@ function downloadPreview() {
 
                 <n-space vertical>
                   <n-text depth="3">最小封闭区域（像素）：{{ chromaAnime.minEnclosedArea }} <n-text depth="3" v-if="chromaAnime.minEnclosedArea === 0" type="warning">(已禁用)</n-text></n-text>
-                  <n-slider v-model:value="chromaAnime.minEnclosedArea" :min="0" :max="500" :step="10" />
-                  <n-text depth="3" style="font-size: 12px;">🔧 设为0禁用封闭区域检测 | 小于此值的封闭透明区域将恢复为前景 (0-500)</n-text>
+                  <n-slider v-model:value="chromaAnime.minEnclosedArea" :min="0" :max="1000" :step="10" />
+                  <n-text depth="3" style="font-size: 12px;">🔧 设为0禁用封闭区域检测 | 小于此值的封闭透明区域将恢复为前景 (0-1000)</n-text>
                 </n-space>
 
                 <n-divider style="margin: 8px 0;" />
@@ -241,19 +241,13 @@ function downloadPreview() {
                     <n-text depth="3">自动采样背景色：</n-text>
                     <n-switch v-model:value="chromaAnime.autoSample" />
                   </n-space>
-                  <n-space align="center">
+                  <n-space vertical>
                     <n-text depth="3">抗锯齿：</n-text>
-                    <n-switch v-model:value="chromaAnime.antiAlias" />
+                    <n-slider v-model:value="chromaAnime.antiAliasStrength" :min="0" :max="1" :step="0.1" />
                   </n-space>
-                  <n-space align="center">
+                  <n-space vertical>
                     <n-text depth="3">激进毛边移除：</n-text>
-                    <n-switch v-model:value="chromaAnime.aggressiveEdgeRemoval" />
-                    <n-tooltip trigger="hover">
-                      <template #trigger>
-                        <n-icon style="cursor: help;"><InformationCircle /></n-icon>
-                      </template>
-                      开启后会更激进地移除毛边，适用于毛边严重的图片
-                    </n-tooltip>
+                    <n-slider v-model:value="chromaAnime.edgeRemovalStrength" :min="0" :max="2" :step="0.1" />
                   </n-space>
                   <n-space align="center">
                     <n-text depth="3">黑底预览：</n-text>
