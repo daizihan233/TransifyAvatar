@@ -1,27 +1,29 @@
 <template>
-  <n-config-provider :theme="themeRef" :date-locale="dateZhCN" :locale="zhCN" class="full">
+  <n-config-provider :theme="themeRef" :date-locale="dateZhCN" :locale="zhCN">
     <n-global-style />
-    <n-message-provider class="full">
-      <n-dialog-provider class="full">
-        <n-flex vertical class="center stat">
-          <n-space vertical>
-            <n-steps :current="current" :status="currentStatus">
-              <n-step
-                  title="上传图片"
-              />
-              <n-step
-                  title="模型处理"
-              />
-              <n-step
-                  title="图片裁剪"
-              />
-              <n-step
-                  title="完成！！"
-              />
-            </n-steps>
-          </n-space>
-          <NuxtPage />
-        </n-flex>
+    <n-message-provider>
+      <n-dialog-provider>
+        <div class="full">
+          <n-flex vertical class="center stat">
+            <n-space vertical>
+              <n-steps :current="current" :status="currentStatus">
+                <n-step
+                    title="上传图片"
+                />
+                <n-step
+                    title="模型处理"
+                />
+                <n-step
+                    title="图片裁剪"
+                />
+                <n-step
+                    title="完成！！"
+                />
+              </n-steps>
+            </n-space>
+            <NuxtPage />
+          </n-flex>
+        </div>
       </n-dialog-provider>
     </n-message-provider>
   </n-config-provider>

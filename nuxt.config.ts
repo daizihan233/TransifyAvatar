@@ -5,6 +5,7 @@ import tsconfigPaths from 'vite-tsconfig-paths'
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
+    compatibilityDate: '2025-10-18',
     modules: ['nuxtjs-naive-ui'],
     build: {
         transpile: ['naive-ui','vueuc']

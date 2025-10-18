@@ -52,6 +52,7 @@ async function startProcess() {
   percent.value = 0
   stage.value = stageLabel('loading model')
   localResult.value = null
+  error.value = null // Clear any previous errors
   try {
     const out = await removeBg(
       uploadedImage.value,
@@ -77,6 +78,7 @@ async function startProcess() {
     stage.value = stageLabel('done')
   } catch (e) {
     // error ref already set
+    console.error('Processing error:', e)
   } finally {
     running.value = false
   }
