@@ -3,6 +3,7 @@ import { ref, reactive, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUploadedImage } from '~~/composables/useUploadedImage'
 import { useMatting } from '~~/composables/useMatting'
+import { InformationCircle, Reload, Checkmark as Check } from '@vicons/ionicons5'
 
 const router = useRouter()
 const { uploadedImage, mattedImage } = useUploadedImage()
@@ -15,12 +16,15 @@ const chromaAnime = reactive({
   minKeepArea: 100,
   useHsv: true,
   autoSample: true,
-  edgeThreshold: 30,
-  erosionTolerance: 1.5,
-  floodFillStrength: 0.5,
-  complexStructureThreshold: 3,
-  edgePrecision: 2,
+  edgeThreshold: 1,
+  erosionTolerance: 3,
+  floodFillStrength: 1,
+  complexStructureThreshold: 10,
+  edgePrecision: 200,
   minEnclosedArea: 240,
+  edgeFeather: 0,
+  antiAlias: true,
+  aggressiveEdgeRemoval: true,
   // 🎯 高级参数：复杂度分析权重
   complexityWeights: {
     angleChange: 35,
@@ -61,6 +65,10 @@ function debounceRun(ms = 200) {
           complexStructureThreshold: chromaAnime.complexStructureThreshold,
           edgePrecision: chromaAnime.edgePrecision,
           minEnclosedArea: chromaAnime.minEnclosedArea,
+          // 🆕 传递新的边缘优化参数
+          edgeFeather: chromaAnime.edgeFeather,
+          antiAlias: chromaAnime.antiAlias,
+          aggressiveEdgeRemoval: chromaAnime.aggressiveEdgeRemoval,
           // 🎯 传递高级参数
           complexityWeights: {
             angleChange: chromaAnime.complexityWeights.angleChange,
@@ -112,10 +120,6 @@ function downloadPreview() {
 <template>
   <div class="chroma-anime-page">
     <n-card title="动漫图抠图 · 实时预览" size="large" class="panel">
-      <template #header-extra>
-        <n-tag type="success" size="small">智能边缘检测</n-tag>
-      </template>
-
       <div v-if="!uploadedImage" class="center">
         <n-result status="404" title="没有可处理的图片" description="请先上传图片">
           <template #footer>
@@ -139,49 +143,55 @@ function downloadPreview() {
                 <n-space vertical>
                   <n-text depth="3">颜色容差：{{ chromaAnime.tolerance }}</n-text>
                   <n-slider v-model:value="chromaAnime.tolerance" :min="0" :max="255" :step="1" />
-                  <n-text depth="3" style="font-size: 12px;">控制背景色相似度范围</n-text>
+                  <n-text depth="3" style="font-size: 12px;">控制背景色相似度范围 (0-255)</n-text>
                 </n-space>
 
                 <n-space vertical>
                   <n-text depth="3">边缘检测阈值：{{ chromaAnime.edgeThreshold }} <n-text depth="3" v-if="chromaAnime.edgeThreshold === 0" type="warning">(已禁用)</n-text></n-text>
-                  <n-slider v-model:value="chromaAnime.edgeThreshold" :min="0" :max="100" :step="1" />
-                  <n-text depth="3" style="font-size: 12px;">🔧 设为0禁用边缘检测 | 数值越小越敏感</n-text>
+                  <n-slider v-model:value="chromaAnime.edgeThreshold" :min="0" :max="200" :step="1" />
+                  <n-text depth="3" style="font-size: 12px;">🔧 设为0禁用边缘检测 | 数值越小越敏感 (0-200)</n-text>
                 </n-space>
 
                 <n-space vertical>
                   <n-text depth="3">边缘精度（像素）：{{ chromaAnime.edgePrecision }}</n-text>
                   <n-slider v-model:value="chromaAnime.edgePrecision" :min="1" :max="5" :step="1" />
-                  <n-text depth="3" style="font-size: 12px;">边缘腐蚀的搜索范围</n-text>
+                  <n-text depth="3" style="font-size: 12px;">边缘腐蚀的搜索范围 (1-5像素)</n-text>
                 </n-space>
 
                 <n-space vertical>
                   <n-text depth="3">去白边强度：{{ chromaAnime.erosionTolerance.toFixed(1) }} <n-text depth="3" v-if="chromaAnime.erosionTolerance === 0" type="warning">(已禁用)</n-text></n-text>
-                  <n-slider v-model:value="chromaAnime.erosionTolerance" :min="0" :max="3.0" :step="0.1" />
-                  <n-text depth="3" style="font-size: 12px;">🔧 设为0禁用边缘腐蚀 | 数值越大越激进</n-text>
+                  <n-slider v-model:value="chromaAnime.erosionTolerance" :min="0" :max="3" :step="0.1" />
+                  <n-text depth="3" style="font-size: 12px;">🔧 设为0禁用边缘腐蚀 | 数值越大越激进 (0-3.0)</n-text>
+                </n-space>
+
+                <n-space vertical>
+                  <n-text depth="3">边缘羽化强度：{{ chromaAnime.edgeFeather }} <n-text depth="3" v-if="chromaAnime.edgeFeather === 0" type="warning">(已禁用)</n-text></n-text>
+                  <n-slider v-model:value="chromaAnime.edgeFeather" :min="0" :max="10" :step="1" />
+                  <n-text depth="3" style="font-size: 12px;">🔧 设为0禁用边缘羽化 | 使边缘过渡更平滑自然 (0-10)</n-text>
                 </n-space>
 
                 <n-space vertical>
                   <n-text depth="3">复杂结构阈值：{{ chromaAnime.complexStructureThreshold }} <n-text depth="3" v-if="chromaAnime.complexStructureThreshold === 0" type="warning">(已禁用)</n-text></n-text>
                   <n-slider v-model:value="chromaAnime.complexStructureThreshold" :min="0" :max="10" :step="1" />
-                  <n-text depth="3" style="font-size: 12px;">🔧 设为0禁用复杂结构保护 | 识别镂空和粒子效果</n-text>
+                  <n-text depth="3" style="font-size: 12px;">🔧 设为0禁用复杂结构保护 | 识别镂空和粒子效果 (0-10)</n-text>
                 </n-space>
 
                 <n-space vertical>
                   <n-text depth="3">洪水填充强度：{{ chromaAnime.floodFillStrength.toFixed(1) }} <n-text depth="3" v-if="chromaAnime.floodFillStrength < 0" type="warning">(已禁用)</n-text></n-text>
                   <n-slider v-model:value="chromaAnime.floodFillStrength" :min="-1" :max="1" :step="0.1" />
-                  <n-text depth="3" style="font-size: 12px;">🔧 设为-1禁用洪水填充 | 控制是否穿越小缝隙</n-text>
+                  <n-text depth="3" style="font-size: 12px;">🔧 设为-1禁用洪水填充 | 控制是否穿越小缝隙 (-1.0-1.0)</n-text>
                 </n-space>
 
                 <n-space vertical>
                   <n-text depth="3">最小保留区域（像素）：{{ chromaAnime.minKeepArea }} <n-text depth="3" v-if="chromaAnime.minKeepArea === 0" type="warning">(已禁用)</n-text></n-text>
-                  <n-slider v-model:value="chromaAnime.minKeepArea" :min="0" :max="300" :step="1" />
-                  <n-text depth="3" style="font-size: 12px;">🔧 设为0禁用小区域移除 | 小于此面积的碎片将被移除</n-text>
+                  <n-slider v-model:value="chromaAnime.minKeepArea" :min="0" :max="100" :step="10" />
+                  <n-text depth="3" style="font-size: 12px;">🔧 设为0禁用小区域移除 | 小于此面积的碎片将被移除 (0-100)</n-text>
                 </n-space>
 
                 <n-space vertical>
                   <n-text depth="3">最小封闭区域（像素）：{{ chromaAnime.minEnclosedArea }} <n-text depth="3" v-if="chromaAnime.minEnclosedArea === 0" type="warning">(已禁用)</n-text></n-text>
-                  <n-slider v-model:value="chromaAnime.minEnclosedArea" :min="0" :max="300" :step="1" />
-                  <n-text depth="3" style="font-size: 12px;">🔧 设为0禁用封闭区域检测 | 小于此值的封闭透明区域将恢复为前景</n-text>
+                  <n-slider v-model:value="chromaAnime.minEnclosedArea" :min="0" :max="500" :step="10" />
+                  <n-text depth="3" style="font-size: 12px;">🔧 设为0禁用封闭区域检测 | 小于此值的封闭透明区域将恢复为前景 (0-500)</n-text>
                 </n-space>
 
                 <n-divider style="margin: 8px 0;" />
@@ -194,6 +204,20 @@ function downloadPreview() {
                   <n-space align="center">
                     <n-text depth="3">自动采样背景色：</n-text>
                     <n-switch v-model:value="chromaAnime.autoSample" />
+                  </n-space>
+                  <n-space align="center">
+                    <n-text depth="3">抗锯齿：</n-text>
+                    <n-switch v-model:value="chromaAnime.antiAlias" />
+                  </n-space>
+                  <n-space align="center">
+                    <n-text depth="3">激进毛边移除：</n-text>
+                    <n-switch v-model:value="chromaAnime.aggressiveEdgeRemoval" />
+                    <n-tooltip trigger="hover">
+                      <template #trigger>
+                        <n-icon style="cursor: help;"><InformationCircle /></n-icon>
+                      </template>
+                      开启后会更激进地移除毛边，适用于毛边严重的图片
+                    </n-tooltip>
                   </n-space>
                   <n-space align="center">
                     <n-text depth="3">黑底预览：</n-text>
@@ -217,39 +241,39 @@ function downloadPreview() {
                     <n-collapse-item name="advanced-params" title="复杂度分析高级参数" :is-active="true">
                       <n-space vertical style="width: 100%;">
                         <n-space vertical>
-                          <n-text depth="3">复杂度权重 - 角度变化：</n-text>
+                          <n-text depth="3">复杂度权重 - 角度变化：{{ chromaAnime.complexityWeights.angleChange }}</n-text>
                           <n-slider v-model:value="chromaAnime.complexityWeights.angleChange" :min="0" :max="100" :step="1" />
-                          <n-text depth="3" style="font-size: 12px;">控制角度变化对复杂度的影响</n-text>
+                          <n-text depth="3" style="font-size: 12px;">控制角度变化对复杂度的影响 (0-100)</n-text>
                         </n-space>
 
                         <n-space vertical>
-                          <n-text depth="3">复杂度权重 - 标准差：</n-text>
+                          <n-text depth="3">复杂度权重 - 标准差：{{ chromaAnime.complexityWeights.stdDev }}</n-text>
                           <n-slider v-model:value="chromaAnime.complexityWeights.stdDev" :min="0" :max="100" :step="1" />
-                          <n-text depth="3" style="font-size: 12px;">控制颜色标准差对复杂度的影响</n-text>
+                          <n-text depth="3" style="font-size: 12px;">控制颜色标准差对复杂度的影响 (0-100)</n-text>
                         </n-space>
 
                         <n-space vertical>
-                          <n-text depth="3">复杂度权重 - 周长面积：</n-text>
+                          <n-text depth="3">复杂度权重 - 周长面积：{{ chromaAnime.complexityWeights.perimeterArea }}</n-text>
                           <n-slider v-model:value="chromaAnime.complexityWeights.perimeterArea" :min="0" :max="100" :step="1" />
-                          <n-text depth="3" style="font-size: 12px;">控制周长与面积比对复杂度的影响</n-text>
+                          <n-text depth="3" style="font-size: 12px;">控制周长与面积比对复杂度的影响 (0-100)</n-text>
                         </n-space>
 
                         <n-space vertical>
-                          <n-text depth="3">复杂度权重 - 圆形度：</n-text>
+                          <n-text depth="3">复杂度权重 - 圆形度：{{ chromaAnime.complexityWeights.circularity }}</n-text>
                           <n-slider v-model:value="chromaAnime.complexityWeights.circularity" :min="0" :max="100" :step="1" />
-                          <n-text depth="3" style="font-size: 12px;">控制形状圆形度对复杂度的影响</n-text>
+                          <n-text depth="3" style="font-size: 12px;">控制形状圆形度对复杂度的影响 (0-100)</n-text>
                         </n-space>
 
                         <n-space vertical>
-                          <n-text depth="3">最大封闭面积：</n-text>
-                          <n-slider v-model:value="chromaAnime.maxEnclosedAreaForComplexity" :min="0" :max="2000" :step="10" />
-                          <n-text depth="3" style="font-size: 12px;">🔧 设为0不限制 | 大于此面积的封闭区域直接保持透明</n-text>
+                          <n-text depth="3">最大封闭面积：{{ chromaAnime.maxEnclosedAreaForComplexity }}</n-text>
+                          <n-slider v-model:value="chromaAnime.maxEnclosedAreaForComplexity" :min="0" :max="99999" :step="100" />
+                          <n-text depth="3" style="font-size: 12px;">🔧 设为0不限制 | 大于此面积的封闭区域直接保持透明 (0-99999)</n-text>
                         </n-space>
 
                         <n-space vertical>
-                          <n-text depth="3">周长面积归一化系数：</n-text>
-                          <n-slider v-model:value="chromaAnime.perimeterAreaNormalizer" :min="1" :max="50" :step="1" />
-                          <n-text depth="3" style="font-size: 12px;">控制周长归一化的强度</n-text>
+                          <n-text depth="3">周长面积归一化系数：{{ chromaAnime.perimeterAreaNormalizer }}</n-text>
+                          <n-slider v-model:value="chromaAnime.perimeterAreaNormalizer" :min="1" :max="100" :step="1" />
+                          <n-text depth="3" style="font-size: 12px;">控制周长归一化的强度 (1-100)</n-text>
                         </n-space>
                       </n-space>
                     </n-collapse-item>
