@@ -40,6 +40,9 @@ const previewUrl = ref<string | null>(null)
 const running = ref(false)
 const darkBg = ref(true)
 const showAdvanced = ref(false)
+// 🆕 进度状态
+const progressStage = ref<string>('')
+const progressPercent = ref<number>(0)
 let timer: any = null
 let seq = 0
 
@@ -49,10 +52,18 @@ function debounceRun(ms = 200) {
   timer = setTimeout(async () => {
     const id = ++seq
     running.value = true
+    progressStage.value = '准备开始...'
+    progressPercent.value = 0
     try {
       const out = await removeBg(
         uploadedImage.value!,
-        undefined,
+        (stage: string, percent?: number) => {
+          // 🆕 更新进度状态
+          if (id === seq) {
+            progressStage.value = stage
+            progressPercent.value = percent ?? 0
+          }
+        },
         { backend: 'chroma-anime', chromaAnime: {
           color: chromaAnime.color,
           tolerance: chromaAnime.tolerance,
@@ -80,9 +91,16 @@ function debounceRun(ms = 200) {
           perimeterAreaNormalizer: chromaAnime.perimeterAreaNormalizer
         }}
       )
-      if (id === seq) previewUrl.value = out
+      if (id === seq) {
+        previewUrl.value = out
+        progressStage.value = ''
+        progressPercent.value = 100
+      }
     } catch {
-      // error state handled by composable
+      if (id === seq) {
+        progressStage.value = ''
+        progressPercent.value = 0
+      }
     } finally {
       if (id === seq) running.value = false
     }
@@ -120,6 +138,10 @@ function downloadPreview() {
 <template>
   <div class="chroma-anime-page">
     <n-card title="动漫图抠图 · 实时预览" size="large" class="panel">
+      <template #header-extra>
+        <n-tag type="success" size="small">智能边缘检测 v4</n-tag>
+      </template>
+
       <div v-if="!uploadedImage" class="center">
         <n-result status="404" title="没有可处理的图片" description="请先上传图片">
           <template #footer>
@@ -133,7 +155,21 @@ function downloadPreview() {
           <div class="controls">
             <n-card size="small" :bordered="true">
               <n-space vertical style="width: 100%;">
-                <n-space vertical align="center" style="width: 100%;">
+                <!-- 🆕 进度显示区域 -->
+                <n-card size="small" :bordered="false" style="background: linear-gradient(135deg, #667eea22 0%, #764ba222 100%);">
+                  <n-space vertical size="small">
+                    <n-text strong style="font-size: 14px;">{{ progressStage || '处理中...' }}</n-text>
+                    <n-progress
+                      type="line"
+                      :percentage="progressPercent"
+                      :show-indicator="true"
+                      :color="progressPercent >= 100 ? '#18a058' : '#2080f0'"
+                      :height="20"
+                    />
+                  </n-space>
+                </n-card>
+
+                <n-space vertical>
                   <n-text depth="3">背景颜色：</n-text>
                   <n-color-picker v-model:value="chromaAnime.color" :show-alpha="false" :actions="['confirm']" size="small" style="width: 240px;" />
                 </n-space>
@@ -296,7 +332,13 @@ function downloadPreview() {
                 <img v-if="previewUrl" :src="previewUrl" alt="preview" />
                 <img v-else :src="uploadedImage!" alt="source" />
                 <div v-if="running || loading" class="overlay">
-                  <n-spin size="large">渲染中...</n-spin>
+                  <n-spin size="large">
+                    <template #description>
+                      <div style="margin-top: 12px; font-size: 14px;">
+                        {{ progressStage || '渲染中...' }}
+                      </div>
+                    </template>
+                  </n-spin>
                 </div>
               </div>
             </n-card>
